@@ -105,6 +105,10 @@ async def main():
         add_log("ERROR: API_ID and API_HASH not configured!", "ERROR")
         return
 
+    if Config.PROXY:
+        logger.info(f"Using proxy: {Config.PROXY['scheme']}://{Config.PROXY['hostname']}:{Config.PROXY['port']}")
+        add_log(f"Proxy: {Config.PROXY['scheme']}://{Config.PROXY['hostname']}:{Config.PROXY['port']}")
+
     client = Client(
         name="userbot_session",
         api_id=Config.API_ID,
@@ -112,6 +116,7 @@ async def main():
         phone_number=Config.PHONE or None,
         session_string=Config.SESSION_STRING or None,
         workdir=Config.BASE_DIR,
+        proxy=Config.PROXY or None,
     )
 
     # Register built-in commands
