@@ -1,11 +1,12 @@
 """
-sandusr — Telegram userbot
-Entry point. No web panel, no Flask — just the bot.
+sandusr — Telegram userbot v3.0
+Entry point with web panel.
 """
 import os
 import sys
 import asyncio
 import logging
+import threading
 import traceback
 
 if sys.platform == "win32":
@@ -20,6 +21,7 @@ from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineK
 
 from config import Config
 from loader import load_all_scripts
+from web import app, set_bot_status, set_loaded_scripts, add_log
 
 # Simple logging
 logging.basicConfig(
@@ -30,13 +32,19 @@ logger = logging.getLogger("sandusr")
 
 VERSION = Config.VERSION
 BOT_NAME = "sandusr"
+_loaded_scripts = []
 
-# ── .mm command ──
+
+# ═══════════════════════════════════════════════════════════════════════
+#  .mm — menu
+# ═══════════════════════════════════════════════════════════════════════
+
 MM_KEYBOARD = InlineKeyboardMarkup([
     [InlineKeyboardButton("🏓 Пинг", callback_data="mm_ping")],
     [InlineKeyboardButton("ℹ️ Инфо", callback_data="mm_info")],
     [InlineKeyboardButton("👤 Владелец", callback_data="mm_owner")],
 ])
+
 
 async def mm_cmd(client, message: Message):
     text = f"🤖 <b>{BOT_NAME}</b> v{VERSION}\n\nВыберите действие:"
@@ -44,6 +52,7 @@ async def mm_cmd(client, message: Message):
         await message.edit_text(text, reply_markup=MM_KEYBOARD, parse_mode=ParseMode.HTML)
     except Exception:
         await message.reply(text, reply_markup=MM_KEYBOARD, parse_mode=ParseMode.HTML)
+
 
 async def mm_cb(client, callback: CallbackQuery):
     d = callback.data
@@ -70,9 +79,29 @@ async def mm_cb(client, callback: CallbackQuery):
         )
     await callback.answer()
 
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Web panel (Flask in separate thread)
+# ═══════════════════════════════════════════════════════════════════════
+
+def _start_web_panel(port):
+    """Run Flask in a daemon thread."""
+    try:
+        app.run(host="0.0.0.0", port=port, debug=False, threaded=True, use_reloader=False)
+    except Exception as e:
+        logger.error(f"Web panel error: {e}")
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Bot startup
+# ═══════════════════════════════════════════════════════════════════════
+
 async def main():
+    global _loaded_scripts
+
     if not Config.API_ID or not Config.API_HASH:
         logger.error("API_ID and API_HASH not configured!")
+        add_log("ERROR: API_ID and API_HASH not configured!", "ERROR")
         return
 
     client = Client(
@@ -89,18 +118,43 @@ async def main():
     client.add_handler(CallbackQueryHandler(mm_cb, filters.regex(r"^mm_")))
 
     # Load all scripts
-    global _loaded_scripts
     _loaded_scripts = load_all_scripts(client)
+    set_loaded_scripts(_loaded_scripts)
+    add_log(f"Loaded {len(_loaded_scripts)} scripts: {', '.join(_loaded_scripts)}")
 
     logger.info(f"Loaded {len(_loaded_scripts)} scripts: {', '.join(_loaded_scripts)}")
 
-    async with client:
-        me = await client.get_me()
-        logger.info(f"Started as @{me.username or me.first_name} (ID: {me.id})")
-        await idle()
+    try:
+        async with client:
+            me = await client.get_me()
+            account = f"@{me.username}" if me.username else me.first_name
+            set_bot_status("online", account)
+            add_log(f"Started as {account} (ID: {me.id})")
+            logger.info(f"Started as {account} (ID: {me.id})")
+            await idle()
+    except Exception as e:
+        logger.error(f"Bot error: {e}")
+        add_log(f"Bot error: {e}", "ERROR")
+    finally:
+        set_bot_status("offline")
+        add_log("Bot stopped")
+
 
 if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8080))
+
+    # Start web panel in background thread
+    web_thread = threading.Thread(target=_start_web_panel, args=(port,), daemon=True)
+    web_thread.start()
+    logger.info(f"Web panel: http://localhost:{port}")
+    add_log(f"Web panel started on port {port}")
+    logger.info("Starting userbot...")
+    add_log("Starting userbot...")
+
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("Stopped")
+        logger.info("Stopped by user")
+    except Exception as e:
+        logger.critical(f"Fatal: {e}")
+        logger.critical(traceback.format_exc())
