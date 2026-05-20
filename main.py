@@ -16,6 +16,7 @@ if sys.platform == "win32":
         pass
 
 from pyrogram import Client, filters, idle
+from pyrogram.handlers import MessageHandler, CallbackQueryHandler
 from pyrogram.enums import ParseMode
 from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
