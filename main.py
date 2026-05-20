@@ -37,7 +37,7 @@ from pyrogram.enums import ParseMode
 from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
 from config import Config
-from loader import load_all_scripts
+from loader import load_all_scripts, load_script, unload_script, reload_script, get_script_info, get_loaded_names, get_available
 from web import app, set_bot_status, set_loaded_scripts, add_log
 
 # Simple logging
@@ -50,6 +50,7 @@ logger = logging.getLogger("sandusr")
 VERSION = Config.VERSION
 BOT_NAME = "sandusr"
 _loaded_scripts = []
+PHOTO_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot_photo.jpg")
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -144,10 +145,20 @@ MM_KEYBOARD = InlineKeyboardMarkup([
 
 async def mm_cmd(client, message: Message):
     text = f"🤖 <b>{BOT_NAME}</b> v{VERSION}\n\nВыберите действие:"
-    try:
-        await message.edit_text(text, reply_markup=MM_KEYBOARD, parse_mode=ParseMode.HTML)
-    except Exception:
-        await message.reply(text, reply_markup=MM_KEYBOARD, parse_mode=ParseMode.HTML)
+    # Try with photo if exists
+    if os.path.exists(PHOTO_FILE):
+        try:
+            await message.edit_text(text, reply_markup=MM_KEYBOARD, parse_mode=ParseMode.HTML)
+        except Exception:
+            try:
+                await message.reply_photo(PHOTO_FILE, caption=text, reply_markup=MM_KEYBOARD, parse_mode=ParseMode.HTML)
+            except Exception:
+                await message.reply(text, reply_markup=MM_KEYBOARD, parse_mode=ParseMode.HTML)
+    else:
+        try:
+            await message.edit_text(text, reply_markup=MM_KEYBOARD, parse_mode=ParseMode.HTML)
+        except Exception:
+            await message.reply(text, reply_markup=MM_KEYBOARD, parse_mode=ParseMode.HTML)
 
 
 async def mm_cb(client, callback: CallbackQuery):
@@ -174,6 +185,199 @@ async def mm_cb(client, callback: CallbackQuery):
             parse_mode=ParseMode.HTML
         )
     await callback.answer()
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  .mf  —  set menu photo from reply
+# ═══════════════════════════════════════════════════════════════════════
+
+async def mf_cmd(client, message: Message):
+    """Reply to a photo to set it as the bot menu photo."""
+    if not message.reply_to_message:
+        await safe_edit(message,
+            "❌ Ответьте на сообщение с фото:\n<code>.mf</code> (ответ на фото)",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    reply = message.reply_to_message
+    if not reply.photo and not reply.sticker:
+        await safe_edit(message,
+            "❌ В ответе должно быть фото или стикер",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    await safe_edit(message, "📸 Сохранение фото...", parse_mode=ParseMode.HTML)
+
+    try:
+        if reply.photo:
+            file = await client.download_media(reply.photo.file_id, file_name=PHOTO_FILE)
+        else:
+            file = await client.download_media(reply.sticker.file_id, file_name=PHOTO_FILE)
+
+        if file:
+            await safe_edit(message,
+                "✅ Фото установлено!\n\nТеперь <code>.mm</code> покажет это фото.",
+                parse_mode=ParseMode.HTML,
+            )
+            add_log("Menu photo updated")
+        else:
+            await safe_edit(message, "❌ Не удалось скачать фото", parse_mode=ParseMode.HTML)
+    except Exception as e:
+        await safe_edit(message, f"❌ Ошибка: {e}", parse_mode=ParseMode.HTML)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  .lm  —  script management
+# ═══════════════════════════════════════════════════════════════════════
+
+async def lm_cmd(client, message: Message):
+    """Handler for .lm command — script management."""
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2:
+        await safe_edit(message,
+            "<b>Управление скриптами:</b>\n\n"
+            "  <code>.lm load &lt;id&gt;</code> — загрузить скрипт\n"
+            "  <code>.lm unload &lt;id&gt;</code> — выгрузить\n"
+            "  <code>.lm reload &lt;id&gt;</code> — перезагрузить\n"
+            "  <code>.lm list</code> — список скриптов\n"
+            "  <code>.lm info &lt;id&gt;</code> — инфо о скрипте",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    action = args[1].strip()
+    add_log(f".lm {action} from {message.from_user.id}" if message.from_user else f".lm {action}")
+
+    if action == "list":
+        await _lm_list(message)
+    elif action.startswith("load "):
+        sid = action[5:].strip()
+        await _lm_load(client, message, sid)
+    elif action.startswith("unload "):
+        sid = action[7:].strip()
+        await _lm_unload(message, sid)
+    elif action.startswith("reload "):
+        sid = action[7:].strip()
+        await _lm_reload(client, message, sid)
+    elif action.startswith("info "):
+        sid = action[5:].strip()
+        await _lm_info(message, sid)
+    else:
+        await safe_edit(message, f"Неизвестная команда: <code>{action}</code>", parse_mode=ParseMode.HTML)
+
+
+async def _lm_list(message: Message):
+    """Show list of scripts (loaded + available)."""
+    available = get_available()
+    loaded = get_loaded_names()
+
+    text = "<b>Скрипты:</b>\n\n"
+    text += "<b>Загружены:</b>\n"
+    if loaded:
+        for sid in loaded:
+            text += f"  ✅ <code>{sid}</code>\n"
+    else:
+        text += "  <i>Нет</i>\n"
+
+    not_loaded = [s for s in available if s not in loaded]
+    text += "\n<b>Доступны:</b>\n"
+    if not_loaded:
+        for sid in not_loaded:
+            text += f"  ⬜ <code>{sid}</code>\n"
+    else:
+        text += "  <i>Все загружены</i>\n"
+
+    text += f"\nВсего: {len(available)}"
+    await safe_edit(message, text, parse_mode=ParseMode.HTML)
+
+
+async def _lm_load(client, message: Message, script_id: str):
+    """Load a script."""
+    result = load_script(script_id, client)
+    if result["success"]:
+        addons = result.get("addons", [])
+        text = f"✅ Скрипт <code>{script_id}</code> загружен!"
+        if addons:
+            text += f"\n🔌 Аддоны: {', '.join(addons)}"
+        await safe_edit(message, text, parse_mode=ParseMode.HTML)
+        add_log(f"Script {script_id} loaded")
+        _loaded_scripts.append(script_id)
+        set_loaded_scripts(_loaded_scripts)
+    else:
+        await safe_edit(message, f"❌ Ошибка: <code>{result['error']}</code>", parse_mode=ParseMode.HTML)
+        add_log(f"Error loading {script_id}: {result['error']}", "ERROR")
+
+
+async def _lm_unload(message: Message, script_id: str):
+    """Unload a script."""
+    result = unload_script(script_id)
+    if result["success"]:
+        await safe_edit(message, f"✅ Скрипт <code>{script_id}</code> выгружен", parse_mode=ParseMode.HTML)
+        add_log(f"Script {script_id} unloaded")
+        if script_id in _loaded_scripts:
+            _loaded_scripts.remove(script_id)
+            set_loaded_scripts(_loaded_scripts)
+    else:
+        await safe_edit(message, f"❌ Ошибка: <code>{result['error']}</code>", parse_mode=ParseMode.HTML)
+
+
+async def _lm_reload(client, message: Message, script_id: str):
+    """Reload a script (unload + load)."""
+    unload_script(script_id)  # ignore errors (may not be loaded)
+    result = load_script(script_id, client)
+    if result["success"]:
+        addons = result.get("addons", [])
+        text = f"✅ Скрипт <code>{script_id}</code> перезагружен!"
+        if addons:
+            text += f"\n🔌 Аддоны: {', '.join(addons)}"
+        await safe_edit(message, text, parse_mode=ParseMode.HTML)
+        add_log(f"Script {script_id} reloaded")
+        if script_id not in _loaded_scripts:
+            _loaded_scripts.append(script_id)
+        set_loaded_scripts(_loaded_scripts)
+    else:
+        await safe_edit(message, f"❌ Ошибка: <code>{result['error']}</code>", parse_mode=ParseMode.HTML)
+        add_log(f"Error reloading {script_id}: {result['error']}", "ERROR")
+
+
+async def _lm_info(message: Message, script_id: str):
+    """Show info about a script."""
+    info = get_script_info(script_id)
+    if info is None:
+        await safe_edit(message, f"❌ Скрипт <code>{script_id}</code> не найден", parse_mode=ParseMode.HTML)
+        return
+
+    text = (
+        f"<b>{info['name']}</b>\n\n"
+        f"ID: <code>{info['id']}</code>\n"
+        f"Загружен: {'✅ Да' if info['loaded'] else '❌ Нет'}\n"
+        f"Размер: {info.get('size', '?')} байт\n"
+        f"Строк: {info.get('lines', '?')}\n"
+    )
+    if info.get("modified"):
+        text += f"Изменён: {info['modified']}\n"
+    if info.get("description"):
+        text += f"\nОписание: <i>{info['description']}</i>\n"
+    if info.get("addons"):
+        text += f"\n<b>Аддоны:</b>\n"
+        for addon in info["addons"]:
+            text += f"  📎 {addon}\n"
+
+    await safe_edit(message, text, parse_mode=ParseMode.HTML)
+
+
+async def safe_edit(message, text, **kwargs):
+    """Safe edit with fallback to reply."""
+    try:
+        return await message.edit_text(text, **kwargs)
+    except Exception:
+        try:
+            return await message.reply(text, quote=False, **kwargs)
+        except Exception:
+            pass
+    return None
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -225,6 +429,8 @@ async def main():
     # Register built-in commands
     client.add_handler(MessageHandler(mm_cmd, filters.command("mm", prefixes=".") & filters.me))
     client.add_handler(CallbackQueryHandler(mm_cb, filters.regex(r"^mm_")))
+    client.add_handler(MessageHandler(mf_cmd, filters.command("mf", prefixes=".") & filters.me & filters.reply))
+    client.add_handler(MessageHandler(lm_cmd, filters.command("lm", prefixes=".") & filters.me))
 
     # Load all scripts
     _loaded_scripts = load_all_scripts(client)
