@@ -1,29 +1,60 @@
 @echo off
-chcp 65001 >nul
+chcp 65001 >nul 2>&1
 title sandusr v3.0
-color 0A
 
-echo.
-echo  ╔══════════════════════════════════════╗
-echo  ║          sandusr v3.0               ║
-echo  ║     Telegram Userbot                ║
-echo  ╚══════════════════════════════════════╝
+echo ========================================
+echo    sandusr v3.0 - Starting...
+echo ========================================
 echo.
 
-:: Создаём папку для логов
+:: Check Python
+where python >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [ERROR] Python not found!
+    echo Install Python 3.10+ from https://python.org
+    echo Make sure "Add Python to PATH" is checked.
+    pause
+    exit /b 1
+)
+
+:: Check .env
+if not exist ".env" (
+    echo [!] .env file not found. Creating from template...
+    if exist ".env.example" (
+        copy ".env.example" ".env" >nul
+        echo [!] Edit .env and set API_ID, API_HASH, PHONE
+        echo.
+        notepad .env
+        echo.
+        echo After editing run start.bat again.
+        pause
+        exit /b 0
+    ) else (
+        echo [ERROR] .env.example not found. Download project again.
+        pause
+        exit /b 1
+    )
+)
+
+:: Create folders
 if not exist "logs" mkdir logs
 
-:: Имя файла лога с датой и временем
-for /f "tokens=2 delims==" %%a in ('wmic os get localdatetime /value') do set "dt=%%a"
-set "logfile=logs\sandusr_%dt:~0,4%-%dt:~4,2%-%dt:~6,2%_%dt:~8,2%-%dt:~10,2%.log"
+:: Install dependencies
+echo [1/2] Checking dependencies...
+python -m pip install pyrofork flask python-dotenv aiohttp >nul 2>&1
 
-echo  [INFO] Log: %logfile%
-echo  [INFO] Starting...
+:: Start
+echo [2/2] Starting userbot...
+echo.
+echo ========================================
+echo   Web panel: http://localhost:8080
+echo   Press Ctrl+C to stop
+echo ========================================
 echo.
 
-:: Запуск бота с записью логов
-python main.py 2>&1 > "%logfile%"
-
-echo.
-echo  [INFO] Bot stopped.
+python main.py
+if %errorlevel% neq 0 (
+    echo.
+    echo [ERROR] Userbot crashed. Check your .env settings.
+)
 pause
