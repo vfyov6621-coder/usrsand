@@ -5,10 +5,10 @@ def register(client):
     from deep_translator import GoogleTranslator
     from pyrogram import filters
     from pyrogram.enums import ParseMode
+    from pyrogram.handlers import MessageHandler
     from pyrogram.types import Message
     from scripts._utils import safe_edit
 
-    @client.on_message(filters.command("trz", prefixes=".") & filters.reply & filters.me)
     async def trz_handler(client, message: Message):
         reply = message.reply_to_message
         if not reply or not (reply.text or reply.caption):
@@ -24,6 +24,8 @@ def register(client):
             await safe_edit(message, f"<b>翻译 (ZH):</b>\n\n<code>{translated}</code>", parse_mode=ParseMode.HTML)
         except Exception as e:
             await safe_edit(message, f"错误: {e}")
+
+    client.add_handler(MessageHandler(trz_handler, filters.command("trz", prefixes=".") & filters.reply & filters.me))
 
 def on_load():
     print("[translator/zh] Loaded. .trz")

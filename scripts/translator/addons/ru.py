@@ -5,10 +5,10 @@ def register(client):
     from deep_translator import GoogleTranslator
     from pyrogram import filters
     from pyrogram.enums import ParseMode
+    from pyrogram.handlers import MessageHandler
     from pyrogram.types import Message
     from scripts._utils import safe_edit
 
-    @client.on_message(filters.command("tra", prefixes=".") & filters.reply & filters.me)
     async def tra_handler(client, message: Message):
         reply = message.reply_to_message
         if not reply or not (reply.text or reply.caption):
@@ -24,6 +24,8 @@ def register(client):
             await safe_edit(message, f"<b>Перевод (RU):</b>\n\n<code>{translated}</code>", parse_mode=ParseMode.HTML)
         except Exception as e:
             await safe_edit(message, f"Ошибка перевода: {e}")
+
+    client.add_handler(MessageHandler(tra_handler, filters.command("tra", prefixes=".") & filters.reply & filters.me))
 
 def on_load():
     print("[translator/ru] Loaded. .tra")

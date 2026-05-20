@@ -566,209 +566,221 @@ async def _handle_summary(client, message: Message, args_raw: str):
 
 def register(client):
     from pyrogram import filters
+    from pyrogram.handlers import MessageHandler
     from pyrogram.enums import ParseMode
     from pyrogram.types import Message
     from scripts._utils import safe_edit
 
-    @client.on_message(filters.command("ai", prefixes=".") & filters.me)
     async def ai_handler(client, message: Message):
         global _chat_enabled, _conversation_history
+        try:
+            settings = _load_settings()
+            model = settings.get("model", DEFAULT_MODEL)
+            system = settings.get("system", DEFAULT_SYSTEM)
 
-        settings = _load_settings()
-        model = settings.get("model", DEFAULT_MODEL)
-        system = settings.get("system", DEFAULT_SYSTEM)
+            args = message.text.split(maxsplit=1)
+            action = args[1].strip() if len(args) > 1 else ""
 
-        args = message.text.split(maxsplit=1)
-        action = args[1].strip() if len(args) > 1 else ""
+            # Определяем команду (первое слово)
+            action_lower = action.lower()
+            action_word = action_lower.split()[0] if action_lower else ""
+            action_rest = action[len(action_word):].strip() if action_word else ""
 
-        # Определяем команду (первое слово)
-        action_lower = action.lower()
-        action_word = action_lower.split()[0] if action_lower else ""
-        action_rest = action[len(action_word):].strip() if action_word else ""
-
-        # .ai on
-        if action_word == "on":
-            _chat_enabled = True
-            _load_history()
-            await safe_edit(
-                message,
-                "🟢 <b>AI режим включён</b>\n\n"
-                f"Модель: <code>{model}</code>\n"
-                "Теперь я отвечу на все твои сообщения.\n\n"
-                "<code>.ai off</code> — выключить\n"
-                "<code>.ai clear</code> — очистить историю",
-                parse_mode=ParseMode.HTML,
-            )
-            return
-
-        # .ai off
-        if action_word == "off":
-            _chat_enabled = False
-            await safe_edit(message, "🔴 AI режим выключен", parse_mode=ParseMode.HTML)
-            return
-
-        # .ai clear
-        if action_word == "clear":
-            _conversation_history = []
-            _save_history()
-            await safe_edit(message, "🗑 История диалога очищена", parse_mode=ParseMode.HTML)
-            return
-
-        # .ai model
-        if action_word == "model":
-            new_model = action_rest.strip()
-            if not new_model:
+            # .ai on
+            if action_word == "on":
+                _chat_enabled = True
+                _load_history()
                 await safe_edit(
                     message,
-                    f"Текущая модель: <code>{model}</code>\n\n"
-                    "Сменить: <code>.ai model qwen2.5:3b</code>",
+                    "🟢 <b>AI режим включён</b>\n\n"
+                    f"Модель: <code>{model}</code>\n"
+                    "Теперь я отвечу на все твои сообщения.\n\n"
+                    "<code>.ai off</code> — выключить\n"
+                    "<code>.ai clear</code> — очистить историю",
                     parse_mode=ParseMode.HTML,
                 )
                 return
-            settings["model"] = new_model
-            _save_settings(settings)
-            await safe_edit(
-                message,
-                f"✅ Модель изменена на: <code>{new_model}</code>\n\n"
-                "Убедись что она скачана:\n"
-                f"<code>ollama pull {new_model}</code>",
-                parse_mode=ParseMode.HTML,
-            )
-            return
 
-        # .ai status
-        if action_word == "status":
-            available, models = await _check_ollama()
-            if available:
-                models_str = "\n".join(f"  • <code>{m}</code>" for m in models[:10])
-                await safe_edit(
-                    message,
-                    f"🟢 <b>Ollama работает</b>\n\n"
-                    f"Текущая модель: <code>{model}</code>\n"
-                    f"URL: <code>{OLLAMA_URL}</code>\n\n"
-                    f"<b>Доступные модели:</b>\n{models_str}",
-                    parse_mode=ParseMode.HTML,
-                )
-            else:
-                await safe_edit(
-                    message,
-                    "🔴 <b>Ollama не запущена</b>\n\n"
-                    "Установи: https://ollama.com/download\n\n"
-                    "После установки:\n"
-                    "<code>ollama pull qwen2.5:1.5b</code>\n"
-                    "<code>ollama serve</code>",
-                    parse_mode=ParseMode.HTML,
-                )
-            return
+            # .ai off
+            if action_word == "off":
+                _chat_enabled = False
+                await safe_edit(message, "🔴 AI режим выключен", parse_mode=ParseMode.HTML)
+                return
 
-        # .ai sys
-        if action_word == "sys":
-            new_sys = action_rest.strip()
-            if not new_sys:
+            # .ai clear
+            if action_word == "clear":
+                _conversation_history = []
+                _save_history()
+                await safe_edit(message, "🗑 История диалога очищена", parse_mode=ParseMode.HTML)
+                return
+
+            # .ai model
+            if action_word == "model":
+                new_model = action_rest.strip()
+                if not new_model:
+                    await safe_edit(
+                        message,
+                        f"Текущая модель: <code>{model}</code>\n\n"
+                        "Сменить: <code>.ai model qwen2.5:3b</code>",
+                        parse_mode=ParseMode.HTML,
+                    )
+                    return
+                settings["model"] = new_model
+                _save_settings(settings)
                 await safe_edit(
                     message,
-                    f"Текущий системный промпт:\n\n<i>{system}</i>\n\n"
-                    "Изменить: <code>.ai sys Ты весёлый бот</code>",
+                    f"✅ Модель изменена на: <code>{new_model}</code>\n\n"
+                    "Убедись что она скачана:\n"
+                    f"<code>ollama pull {new_model}</code>",
                     parse_mode=ParseMode.HTML,
                 )
                 return
-            settings["system"] = new_sys
-            _save_settings(settings)
-            await safe_edit(
-                message,
-                "✅ Системный промпт обновлён:\n\n"
-                f"<i>{new_sys[:200]}</i>",
-                parse_mode=ParseMode.HTML,
-            )
-            return
 
-        # .ai analyze @username [N]
-        if action_word == "analyze":
-            await _handle_analyze(client, message, action_rest)
-            return
+            # .ai status
+            if action_word == "status":
+                available, models = await _check_ollama()
+                if available:
+                    models_str = "\n".join(f"  • <code>{m}</code>" for m in models[:10])
+                    await safe_edit(
+                        message,
+                        f"🟢 <b>Ollama работает</b>\n\n"
+                        f"Текущая модель: <code>{model}</code>\n"
+                        f"URL: <code>{OLLAMA_URL}</code>\n\n"
+                        f"<b>Доступные модели:</b>\n{models_str}",
+                        parse_mode=ParseMode.HTML,
+                    )
+                else:
+                    await safe_edit(
+                        message,
+                        "🔴 <b>Ollama не запущена</b>\n\n"
+                        "Установи: https://ollama.com/download\n\n"
+                        "После установки:\n"
+                        "<code>ollama pull qwen2.5:1.5b</code>\n"
+                        "<code>ollama serve</code>",
+                        parse_mode=ParseMode.HTML,
+                    )
+                return
 
-        # .ai summary [N]
-        if action_word == "summary":
-            await _handle_summary(client, message, action_rest)
-            return
+            # .ai sys
+            if action_word == "sys":
+                new_sys = action_rest.strip()
+                if not new_sys:
+                    await safe_edit(
+                        message,
+                        f"Текущий системный промпт:\n\n<i>{system}</i>\n\n"
+                        "Изменить: <code>.ai sys Ты весёлый бот</code>",
+                        parse_mode=ParseMode.HTML,
+                    )
+                    return
+                settings["system"] = new_sys
+                _save_settings(settings)
+                await safe_edit(
+                    message,
+                    "✅ Системный промпт обновлён:\n\n"
+                    f"<i>{new_sys[:200]}</i>",
+                    parse_mode=ParseMode.HTML,
+                )
+                return
 
-        # .ai (без аргументов) — справка
-        if not action:
-            await safe_edit(
-                message,
-                "<b>🤖 AI Chat — локальный ассистент</b>\n\n"
-                "<code>.ai &lt;любой вопрос&gt;</code> — спросить AI\n"
-                "<code>.ai on/off</code> — режим диалога\n"
-                "<code>.ai clear</code> — очистить историю\n"
-                "<code>.ai model &lt;name&gt;</code> — сменить модель\n"
-                "<code>.ai status</code> — статус Ollama\n"
-                "<code>.ai sys &lt;текст&gt;</code> — характер AI\n\n"
-                "<b>Анализ чата (можно писать по-русски):</b>\n"
-                "<code>.ai проанализируй @username</code>\n"
-                "<code>.ai проанализируй @username 500</code>\n"
-                "<code>.ai расскажи о @username</code>\n"
-                "<code>.ai кто такой @username</code>\n"
-                "<code>.ai опиши @username</code>\n"
-                "<code>.ai проанализируй</code> (reply)\n"
-                "<code>.ai сводка по чату</code>\n"
-                "<code>.ai что обсуждали</code>",
-                parse_mode=ParseMode.HTML,
-            )
-            return
+            # .ai analyze @username [N]
+            if action_word == "analyze":
+                await _handle_analyze(client, message, action_rest)
+                return
 
-        # ═══ Авто-определение анализа по русским фразам ═══
-        intent = _detect_analyze_intent(action)
+            # .ai summary [N]
+            if action_word == "summary":
+                await _handle_summary(client, message, action_rest)
+                return
 
-        if intent["type"] == "chat":
-            await _handle_summary(client, message, str(intent["count"]))
-            return
+            # .ai (без аргументов) — справка
+            if not action:
+                await safe_edit(
+                    message,
+                    "<b>🤖 AI Chat — локальный ассистент</b>\n\n"
+                    "<code>.ai &lt;любой вопрос&gt;</code> — спросить AI\n"
+                    "<code>.ai on/off</code> — режим диалога\n"
+                    "<code>.ai clear</code> — очистить историю\n"
+                    "<code>.ai model &lt;name&gt;</code> — сменить модель\n"
+                    "<code>.ai status</code> — статус Ollama\n"
+                    "<code>.ai sys &lt;текст&gt;</code> — характер AI\n\n"
+                    "<b>Анализ чата (можно писать по-русски):</b>\n"
+                    "<code>.ai проанализируй @username</code>\n"
+                    "<code>.ai проанализируй @username 500</code>\n"
+                    "<code>.ai расскажи о @username</code>\n"
+                    "<code>.ai кто такой @username</code>\n"
+                    "<code>.ai опиши @username</code>\n"
+                    "<code>.ai проанализируй</code> (reply)\n"
+                    "<code>.ai сводка по чату</code>\n"
+                    "<code>.ai что обсуждали</code>",
+                    parse_mode=ParseMode.HTML,
+                )
+                return
 
-        if intent["type"] == "user":
-            target = f"@{intent['username']}" if intent["username"] else ""
-            count_str = str(intent["count"])
-            await _handle_analyze(client, message, f"{target} {count_str}".strip())
-            return
+            # ═══ Авто-определение анализа по русским фразам ═══
+            intent = _detect_analyze_intent(action)
 
-        if intent["type"] == "reply":
-            # Нет @username но есть ключевое слово — пробуем reply
-            if message.reply_to_message and message.reply_to_message.from_user:
-                u = message.reply_to_message.from_user
-                target = f"@{u.username}" if u.username else str(u.id)
+            if intent["type"] == "chat":
+                await _handle_summary(client, message, str(intent["count"]))
+                return
+
+            if intent["type"] == "user":
+                target = f"@{intent['username']}" if intent["username"] else ""
                 count_str = str(intent["count"])
                 await _handle_analyze(client, message, f"{target} {count_str}".strip())
                 return
 
-        # .ai <текст> — задать вопрос
-        question = args[1].strip()
+            if intent["type"] == "reply":
+                if message.reply_to_message and message.reply_to_message.from_user:
+                    u = message.reply_to_message.from_user
+                    target = f"@{u.username}" if u.username else str(u.id)
+                    count_str = str(intent["count"])
+                    await _handle_analyze(client, message, f"{target} {count_str}".strip())
+                    return
 
-        thinking_msg = None
-        try:
-            await message.edit_text("🤔 Думаю...", parse_mode=ParseMode.HTML)
-            thinking_msg = message
-        except Exception:
-            thinking_msg = await message.reply("🤔 Думаю...", quote=True)
+            # .ai <текст> — задать вопрос
+            question = args[1].strip()
 
-        _load_history()
-        answer = await _ask_ollama(question, model, system, _conversation_history)
-
-        _conversation_history.append({"role": "user", "content": question})
-        _conversation_history.append({"role": "assistant", "content": answer})
-        _save_history()
-
-        answer = _truncate_text(answer)
-        try:
-            await thinking_msg.edit_text(
-                answer,
-                parse_mode=ParseMode.HTML,
-                disable_web_page_preview=True,
-            )
-        except Exception:
+            thinking_msg = None
             try:
-                await thinking_msg.reply(answer, quote=False)
+                await message.edit_text("🤔 Думаю...", parse_mode=ParseMode.HTML)
+                thinking_msg = message
+            except Exception:
+                thinking_msg = await message.reply("🤔 Думаю...", quote=True)
+
+            _load_history()
+            answer = await _ask_ollama(question, model, system, _conversation_history)
+
+            _conversation_history.append({"role": "user", "content": question})
+            _conversation_history.append({"role": "assistant", "content": answer})
+            _save_history()
+
+            answer = _truncate_text(answer)
+            try:
+                await thinking_msg.edit_text(
+                    answer,
+                    parse_mode=ParseMode.HTML,
+                    disable_web_page_preview=True,
+                )
+            except Exception:
+                try:
+                    await thinking_msg.reply(answer, quote=False)
+                except Exception:
+                    pass
+
+        except Exception as e:
+            logger.error(f"ai_handler error: {e}", exc_info=True)
+            try:
+                await safe_edit(message, f"❌ Ошибка: {str(e)[:200]}", parse_mode=ParseMode.HTML)
             except Exception:
                 pass
 
-    @client.on_message(filters.me & ~filters.command(["ai"], prefixes="."))
+    # .ai command handler — group 0 (default, runs first)
+    client.add_handler(MessageHandler(
+        ai_handler,
+        filters.command("ai", prefixes=".") & filters.me,
+    ))
+
+    # AI auto-responder — group 1 (runs AFTER all command handlers)
     async def ai_chat_responder(client, message: Message):
         """Автоматический ответ в режиме диалога."""
         global _conversation_history
@@ -783,31 +795,40 @@ def register(client):
         if text.strip().startswith("."):
             return
 
-        settings = _load_settings()
-        model = settings.get("model", DEFAULT_MODEL)
-        system = settings.get("system", DEFAULT_SYSTEM)
-
-        thinking = await message.reply("🤔 Думаю...", quote=True)
-
-        _load_history()
-        answer = await _ask_ollama(text, model, system, _conversation_history)
-
-        _conversation_history.append({"role": "user", "content": text})
-        _conversation_history.append({"role": "assistant", "content": answer})
-        _save_history()
-
-        answer = _truncate_text(answer)
         try:
-            await thinking.edit_text(
-                answer,
-                parse_mode=ParseMode.HTML,
-                disable_web_page_preview=True,
-            )
-        except Exception:
+            settings = _load_settings()
+            model = settings.get("model", DEFAULT_MODEL)
+            system = settings.get("system", DEFAULT_SYSTEM)
+
+            thinking = await message.reply("🤔 Думаю...", quote=True)
+
+            _load_history()
+            answer = await _ask_ollama(text, model, system, _conversation_history)
+
+            _conversation_history.append({"role": "user", "content": text})
+            _conversation_history.append({"role": "assistant", "content": answer})
+            _save_history()
+
+            answer = _truncate_text(answer)
             try:
-                await thinking.reply(answer, quote=False)
+                await thinking.edit_text(
+                    answer,
+                    parse_mode=ParseMode.HTML,
+                    disable_web_page_preview=True,
+                )
             except Exception:
-                pass
+                try:
+                    await thinking.reply(answer, quote=False)
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.error(f"ai_responder error: {e}", exc_info=True)
+
+    # group=1 — runs AFTER all group 0 command handlers
+    client.add_handler(MessageHandler(
+        ai_chat_responder,
+        filters.me & ~filters.command(["ai"], prefixes="."),
+    ), group=1)
 
 
 def on_load():

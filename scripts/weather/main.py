@@ -36,22 +36,25 @@ def _http_get(url, timeout=15):
 
 
 def register(client):
+    import logging
     from pyrogram import filters
+    from pyrogram.handlers import MessageHandler
     from pyrogram.enums import ParseMode
     from pyrogram.types import Message
     from scripts._utils import safe_edit
 
-    @client.on_message(filters.command("wea", prefixes=".") & filters.me)
+    log = logging.getLogger("sandusr.scripts.weather")
+
     async def wea_handler(client, message: Message):
-        args = message.text.split(maxsplit=1)
-        if len(args) < 2:
-            await safe_edit(message, "<b>🌦 Погода</b>\n\n<code>.wea &lt;город&gt;</code>", parse_mode=ParseMode.HTML)
-            return
-
-        city = args[1].strip()
-        await safe_edit(message, f"🔄 Загрузка погоды: <b>{city}</b>...", parse_mode=ParseMode.HTML)
-
         try:
+            args = message.text.split(maxsplit=1)
+            if len(args) < 2:
+                await safe_edit(message, "<b>🌦 Погода</b>\n\n<code>.wea &lt;город&gt;</code>", parse_mode=ParseMode.HTML)
+                return
+
+            city = args[1].strip()
+            await safe_edit(message, f"🔄 Загрузка погоды: <b>{city}</b>...", parse_mode=ParseMode.HTML)
+
             loop = asyncio.get_running_loop()
             geo_params = urllib.parse.urlencode({"name": city, "count": 1, "language": "ru", "format": "json"})
             geo_data = await loop.run_in_executor(None, _http_get, f"{GEO_URL}?{geo_params}")
@@ -101,7 +104,13 @@ def register(client):
         except urllib.error.URLError as e:
             await safe_edit(message, f"❌ Ошибка сети: {e.reason}", parse_mode=ParseMode.HTML)
         except Exception as e:
+            log.error(f"weather error: {e}", exc_info=True)
             await safe_edit(message, f"❌ Ошибка: {e}", parse_mode=ParseMode.HTML)
+
+    client.add_handler(MessageHandler(
+        wea_handler,
+        filters.command("wea", prefixes=".") & filters.me,
+    ))
 
 
 def on_load():
