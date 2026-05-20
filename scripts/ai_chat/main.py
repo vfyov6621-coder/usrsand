@@ -27,6 +27,8 @@ AI Chat — локальный AI ассистент через Ollama.
 Скорость на i3: примерно 1-3 токена/сек (зависит от модели).
 """
 
+from __future__ import annotations
+
 import os
 import json
 import logging
