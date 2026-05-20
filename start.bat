@@ -40,8 +40,8 @@ if not exist ".env" (
 if not exist "logs" mkdir logs
 
 :: Install dependencies
-echo [1/2] Checking dependencies...
-python -m pip install pyrofork flask python-dotenv aiohttp >nul 2>&1
+echo [1/2] Installing dependencies...
+python -m pip install --quiet pyrofork flask python-dotenv aiohttp requests python-socks[asyncio] 2>nul
 
 :: Start
 echo [2/2] Starting userbot...

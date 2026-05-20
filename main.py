@@ -4,11 +4,27 @@ Entry point with web panel.
 """
 import os
 import sys
+import socket
 import asyncio
 import logging
 import threading
 import traceback
 
+# ═══════════════════════════════════════════════════════════════════════
+#  Connection fixes — MUST be before any imports that use network
+# ═══════════════════════════════════════════════════════════════════════
+
+# 1) Force IPv4 — VPNs on Windows often break IPv6 routing
+_original_getaddrinfo = socket.getaddrinfo
+
+def _ipv4_only_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    """Force IPv4 only — prevents IPv6 timeout through VPN."""
+    return _original_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
+
+if os.environ.get("FORCE_IPV4", "1").lower() in ("1", "true", "yes"):
+    socket.getaddrinfo = _ipv4_only_getaddrinfo
+
+# 2) Windows event loop fix
 if sys.platform == "win32":
     try:
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -34,6 +50,85 @@ logger = logging.getLogger("sandusr")
 VERSION = Config.VERSION
 BOT_NAME = "sandusr"
 _loaded_scripts = []
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Network diagnostics
+# ═══════════════════════════════════════════════════════════════════════
+
+def _check_network():
+    """Pre-flight network check. Returns list of issues."""
+    issues = []
+
+    # Test DNS resolution
+    for host in ["api.telegram.org", "149.154.167.50"]:
+        try:
+            socket.setdefaulttimeout(5)
+            addr = socket.getaddrinfo(host, 443, socket.AF_INET, socket.SOCK_STREAM)
+            if addr:
+                logger.info(f"DNS OK: {host} -> {addr[0][4][0]}")
+            else:
+                issues.append(f"DNS failed for {host} (empty result)")
+        except socket.gaierror:
+            issues.append(f"DNS failed for {host} — cannot resolve hostname")
+        except socket.timeout:
+            issues.append(f"DNS timeout for {host} — network/firewall issue")
+        except Exception as e:
+            issues.append(f"DNS error for {host}: {e}")
+        finally:
+            socket.setdefaulttimeout(None)
+
+    # Test TCP connection to Telegram DC
+    for ip, port in [("149.154.167.50", 443), ("149.154.175.50", 443)]:
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(10)
+            sock.connect((ip, port))
+            sock.close()
+            logger.info(f"TCP OK: {ip}:{port}")
+        except socket.timeout:
+            issues.append(f"TCP timeout to {ip}:{port} — Telegram blocked or VPN not working")
+        except ConnectionRefusedError:
+            issues.append(f"TCP refused by {ip}:{port} — port blocked")
+        except OSError as e:
+            issues.append(f"TCP error to {ip}:{port}: {e}")
+        except Exception as e:
+            issues.append(f"TCP error to {ip}:{port}: {e}")
+
+    # Check proxy if configured
+    if Config.PROXY:
+        proxy_host = Config.PROXY.get("hostname", "?")
+        proxy_port = Config.PROXY.get("port", "?")
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(10)
+            sock.connect((proxy_host, proxy_port))
+            sock.close()
+            logger.info(f"Proxy OK: {proxy_host}:{proxy_port}")
+        except Exception as e:
+            issues.append(f"Proxy unreachable {proxy_host}:{proxy_port}: {e}")
+
+    return issues
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Patch Pyrogram connection timeout
+# ═══════════════════════════════════════════════════════════════════════
+
+def _patch_pyrogram_timeout():
+    """Increase Pyrogram's default connection timeout from 10s to 30s."""
+    try:
+        from pyrogram.connection.connection import Connection
+        Connection.CONNECTION_TIMEOUT = 30
+        logger.info("Pyrogram connection timeout patched: 10s -> 30s")
+    except Exception:
+        try:
+            # Pyrofork may have different structure
+            import pyrogram.connection.tcp.tcp
+            pyrogram.connection.tcp.tcp.Connection.CONNECT_TIMEOUT = 30
+            logger.info("Pyrofork TCP connect timeout patched: 30s")
+        except Exception:
+            logger.debug("Could not patch Pyrogram timeout (not critical)")
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -105,19 +200,27 @@ async def main():
         add_log("ERROR: API_ID and API_HASH not configured!", "ERROR")
         return
 
-    if Config.PROXY:
-        logger.info(f"Using proxy: {Config.PROXY['scheme']}://{Config.PROXY['hostname']}:{Config.PROXY['port']}")
-        add_log(f"Proxy: {Config.PROXY['scheme']}://{Config.PROXY['hostname']}:{Config.PROXY['port']}")
+    # Patch timeout
+    _patch_pyrogram_timeout()
 
-    client = Client(
-        name="userbot_session",
-        api_id=Config.API_ID,
-        api_hash=Config.API_HASH,
-        phone_number=Config.PHONE or None,
-        session_string=Config.SESSION_STRING or None,
-        workdir=Config.BASE_DIR,
-        proxy=Config.PROXY or None,
-    )
+    # Proxy info
+    if Config.PROXY:
+        p = Config.PROXY
+        logger.info(f"Using proxy: {p['scheme']}://{p['hostname']}:{p['port']}")
+        add_log(f"Proxy: {p['scheme']}://{p['hostname']}:{p['port']}")
+
+    # Build client kwargs
+    client_kwargs = {
+        "name": "userbot_session",
+        "api_id": Config.API_ID,
+        "api_hash": Config.API_HASH,
+        "phone_number": Config.PHONE or None,
+        "session_string": Config.SESSION_STRING or None,
+        "workdir": Config.BASE_DIR,
+        "proxy": Config.PROXY or None,
+    }
+
+    client = Client(**client_kwargs)
 
     # Register built-in commands
     client.add_handler(MessageHandler(mm_cmd, filters.command("mm", prefixes=".") & filters.me))
@@ -127,7 +230,6 @@ async def main():
     _loaded_scripts = load_all_scripts(client)
     set_loaded_scripts(_loaded_scripts)
     add_log(f"Loaded {len(_loaded_scripts)} scripts: {', '.join(_loaded_scripts)}")
-
     logger.info(f"Loaded {len(_loaded_scripts)} scripts: {', '.join(_loaded_scripts)}")
 
     try:
@@ -139,8 +241,24 @@ async def main():
             logger.info(f"Started as {account} (ID: {me.id})")
             await idle()
     except Exception as e:
-        logger.error(f"Bot error: {e}")
-        add_log(f"Bot error: {e}", "ERROR")
+        err_str = str(e)
+        logger.error(f"Bot error: {err_str}")
+        add_log(f"Bot error: {err_str}", "ERROR")
+
+        # Helpful error messages
+        if "timed out" in err_str.lower() or "timeout" in err_str.lower():
+            tip = (
+                "CONNECTION TIP: Telegram is unreachable!\n"
+                "Options:\n"
+                "  1) Use a VPN that works with Telegram\n"
+                "  2) Set PROXY in .env: PROXY=socks5://host:port\n"
+                "  3) pip install python-socks[asyncio] (for SOCKS5 proxy)\n"
+                "  4) Set FORCE_IPV4=0 in .env if you need IPv6"
+            )
+            logger.error(tip)
+            add_log(tip, "ERROR")
+        elif "api id" in err_str.lower() or "api_hash" in err_str.lower():
+            add_log("FIX: Check API_ID and API_HASH in .env", "ERROR")
     finally:
         set_bot_status("offline")
         add_log("Bot stopped")
@@ -149,7 +267,24 @@ async def main():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
 
-    # Start web panel in background thread
+    # ── Pre-flight network check ──
+    logger.info("Running network diagnostics...")
+    add_log("Network diagnostics...")
+    issues = _check_network()
+
+    if issues:
+        for issue in issues:
+            logger.warning(f"Network issue: {issue}")
+            add_log(f"Network issue: {issue}", "WARN")
+        logger.warning(
+            "Network issues detected! Telegram may not connect.\n"
+            "Fix: use VPN or set PROXY=socks5://host:port in .env"
+        )
+    else:
+        logger.info("Network diagnostics: all OK")
+        add_log("Network: all OK")
+
+    # ── Start ──
     web_thread = threading.Thread(target=_start_web_panel, args=(port,), daemon=True)
     web_thread.start()
     logger.info(f"Web panel: http://localhost:{port}")
