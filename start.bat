@@ -22,7 +22,7 @@ echo  [INFO] Starting...
 echo.
 
 :: Запуск бота с записью логов
-python main.py 2>&1 | tee %logfile%
+python main.py 2>&1 > "%logfile%"
 
 echo.
 echo  [INFO] Bot stopped.

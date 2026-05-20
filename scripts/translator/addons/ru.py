@@ -1,12 +1,13 @@
 """Translator addon: Russian (.tra)"""
-import asyncio
-from deep_translator import GoogleTranslator
-from pyrogram import filters
-from pyrogram.enums import ParseMode
-from pyrogram.types import Message
-from scripts._utils import safe_edit
 
 def register(client):
+    import asyncio
+    from deep_translator import GoogleTranslator
+    from pyrogram import filters
+    from pyrogram.enums import ParseMode
+    from pyrogram.types import Message
+    from scripts._utils import safe_edit
+
     @client.on_message(filters.command("tra", prefixes=".") & filters.reply & filters.me)
     async def tra_handler(client, message: Message):
         reply = message.reply_to_message

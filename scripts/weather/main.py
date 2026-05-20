@@ -4,10 +4,6 @@ import asyncio
 import urllib.request
 import urllib.parse
 import urllib.error
-from pyrogram import filters
-from pyrogram.enums import ParseMode
-from pyrogram.types import Message
-from scripts._utils import safe_edit
 
 GEO_URL = "https://geocoding-api.open-meteo.com/v1/search"
 WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
@@ -24,24 +20,12 @@ WMO = {
     95: ("Гроза", "thunder"), 96: ("Гроза с градом", "thunder"), 99: ("Сильная гроза", "thunder"),
 }
 
-ART = {
-    "sun": "    \\   /    \n     .---.    \n  ,-|     |-. \n (  |     |  )\n  `'-|     |-'`\n     '---'    \n",
-    "sun_cloud": "   \\  /  \u2601\ufe0f   \n    .--.     \n .(    ).    \n(   .--.  )  \n `-(    )-'  \n    `--'     \n",
-    "cloud": "     \u2601\ufe0f\u2601\ufe0f\u2601\ufe0f     \n   \u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f   \n  \u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f  \n   \u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f   \n    \u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f    \n      \u2601\ufe0f\u2601\ufe0f     \n",
-    "overcast": "  \u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f  \n \u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f \n\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f \n \u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f \n  \u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f  \n   \u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f   \n",
-    "fog": "  _  _  _  _  \n / \\ / \\ / \\ / \\\n|M|I|S|T| | |\n \\_/ \\_/ \\_/ \\_/\n  _  _  _  _  \n / \\ / \\ / \\ / \\\n",
-    "drizzle": "   \u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f   \n  \u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f  \n   \u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f   \n    \u00b7  \u00b7  \u00b7   \n   \u00b7  \u00b7  \u00b7  \u00b7 \n  \u00b7  \u00b7  \u00b7  \u00b7  \n",
-    "rain": "   \u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f   \n  \u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f  \n   \u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f   \n  :  :  :  :  \n :  :  :  :   \n:  :  :  :    \n",
-    "snow": "   \u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f   \n  \u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f  \n   \u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f   \n  *  *  *  *  \n *  *  *  *   \n*  *  *  *    \n",
-    "thunder": "   \u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f   \n  \u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f\u2601\ufe0f  \n   \u2601\ufe0f /\\ \u2601\ufe0f    \n    /  \\     \n   / \u2601\ufe0f \\     \n  \u26a1    \u26a1    \n",
-}
-
-EMOJI = {"sun": "\u2600\ufe0f", "sun_cloud": "\ud83c\udf24\ufe0f", "cloud": "\u26c5", "overcast": "\u2601\ufe0f", "fog": "\ud83c\udf2b\ufe0f", "drizzle": "\ud83c\udf26\ufe0f", "rain": "\ud83c\udf27\ufe0f", "snow": "\u2744\ufe0f", "thunder": "\u26c8\ufe0f"}
+EMOJI = {"sun": "☀️", "sun_cloud": "🌤️", "cloud": "⛅", "overcast": "☁️", "fog": "🌫️", "drizzle": "🌦️", "rain": "🌧️", "snow": "❄️", "thunder": "⛈️"}
 
 
 def _wmo(code):
     name, key = WMO.get(code, ("Неизвестно", "sun"))
-    return name, key, ART.get(key, ART["sun"]), EMOJI.get(key, "\ud83c\udf21\ufe0f")
+    return name, EMOJI.get(key, "🌡️")
 
 
 def _http_get(url, timeout=15):
@@ -52,15 +36,20 @@ def _http_get(url, timeout=15):
 
 
 def register(client):
+    from pyrogram import filters
+    from pyrogram.enums import ParseMode
+    from pyrogram.types import Message
+    from scripts._utils import safe_edit
+
     @client.on_message(filters.command("wea", prefixes=".") & filters.me)
     async def wea_handler(client, message: Message):
         args = message.text.split(maxsplit=1)
         if len(args) < 2:
-            await safe_edit(message, "<b>\ud83c\udf26 Погода</b>\n\n<code>.wea &lt;город&gt;</code>", parse_mode=ParseMode.HTML)
+            await safe_edit(message, "<b>🌦 Погода</b>\n\n<code>.wea &lt;город&gt;</code>", parse_mode=ParseMode.HTML)
             return
 
         city = args[1].strip()
-        await safe_edit(message, f"\ud83d\udd04 Загрузка погоды: <b>{city}</b>...", parse_mode=ParseMode.HTML)
+        await safe_edit(message, f"🔄 Загрузка погоды: <b>{city}</b>...", parse_mode=ParseMode.HTML)
 
         try:
             loop = asyncio.get_running_loop()
@@ -69,7 +58,7 @@ def register(client):
 
             results = geo_data.get("results")
             if not results:
-                await safe_edit(message, f"\u274c Город <b>{city}</b> не найден", parse_mode=ParseMode.HTML)
+                await safe_edit(message, f"❌ Город <b>{city}</b> не найден", parse_mode=ParseMode.HTML)
                 return
 
             loc = results[0]
@@ -89,30 +78,30 @@ def register(client):
             feels = cur.get("apparent_temperature", "?")
             humidity = cur.get("relative_humidity_2m", "?")
             wind = cur.get("wind_speed_10m", "?")
-            condition, art_key, ascii_art, emoji = _wmo(cur.get("weather_code", 0))
+            condition, emoji = _wmo(cur.get("weather_code", 0))
 
-            location = f"\ud83c\udf0d <b>{found_name}</b>"
+            location = f"🌍 <b>{found_name}</b>"
             if region:
                 location += f", {region}"
             if country:
                 location += f", {country}"
 
             text = (
-                f"{location}\n\n<pre>{ascii_art}</pre>\n"
+                f"{location}\n\n"
                 f"{emoji} <b>{condition}</b>\n"
-                f"\ud83c\udf21 Температура: <b>{temp}\u00b0C</b>\n"
-                f"\ud83e\udd12 Ощущается: <b>{feels}\u00b0C</b>\n"
-                f"\ud83d\udca7 Влажность: <b>{humidity}%</b>\n"
-                f"\ud83d\udca8 Ветер: <b>{wind} км/ч</b>"
+                f"🌡 Температура: <b>{temp}°C</b>\n"
+                f"🤒 Ощущается: <b>{feels}°C</b>\n"
+                f"💧 Влажность: <b>{humidity}%</b>\n"
+                f"💨 Ветер: <b>{wind} км/ч</b>"
             )
             await safe_edit(message, text, parse_mode=ParseMode.HTML)
 
         except (asyncio.TimeoutError, TimeoutError):
-            await safe_edit(message, "\u274c Таймаут.", parse_mode=ParseMode.HTML)
+            await safe_edit(message, "❌ Таймаут.", parse_mode=ParseMode.HTML)
         except urllib.error.URLError as e:
-            await safe_edit(message, f"\u274c Ошибка сети: {e.reason}", parse_mode=ParseMode.HTML)
+            await safe_edit(message, f"❌ Ошибка сети: {e.reason}", parse_mode=ParseMode.HTML)
         except Exception as e:
-            await safe_edit(message, f"\u274c Ошибка: {e}", parse_mode=ParseMode.HTML)
+            await safe_edit(message, f"❌ Ошибка: {e}", parse_mode=ParseMode.HTML)
 
 
 def on_load():

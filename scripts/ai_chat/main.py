@@ -33,13 +33,6 @@ import logging
 import asyncio
 from datetime import datetime
 
-import aiohttp
-
-from pyrogram import filters
-from pyrogram.enums import ParseMode
-from pyrogram.types import Message
-from scripts._utils import safe_edit
-
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 HISTORY_FILE = os.path.join(SCRIPT_DIR, "history.json")
 SETTINGS_FILE = os.path.join(SCRIPT_DIR, "settings.json")
@@ -128,6 +121,7 @@ def _save_history():
 
 async def _check_ollama():
     """Проверить доступность Ollama."""
+    import aiohttp
     try:
         timeout = aiohttp.ClientTimeout(total=5)
         async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -143,6 +137,7 @@ async def _check_ollama():
 
 async def _ask_ollama(prompt: str, model: str, system: str, history: list):
     """Отправить запрос к Ollama API."""
+    import aiohttp
     messages = []
 
     if system:
@@ -568,6 +563,10 @@ async def _handle_summary(client, message: Message, args_raw: str):
 # ════════════════════════════════════════════════════════════════
 
 def register(client):
+    from pyrogram import filters
+    from pyrogram.enums import ParseMode
+    from pyrogram.types import Message
+    from scripts._utils import safe_edit
 
     @client.on_message(filters.command("ai", prefixes=".") & filters.me)
     async def ai_handler(client, message: Message):

@@ -1,11 +1,7 @@
 """Notes — quick notes in Telegram. .note save/get/list/del/set, .n <name>"""
 
-import json
 import os
-from pyrogram import filters
-from pyrogram.enums import ParseMode
-from pyrogram.types import Message
-from scripts._utils import safe_edit
+import json
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(os.path.dirname(SCRIPT_DIR), "scripts_custom")
@@ -29,6 +25,11 @@ def _save(data):
 
 
 def register(client):
+    from pyrogram import filters
+    from pyrogram.enums import ParseMode
+    from pyrogram.types import Message
+    from scripts._utils import safe_edit
+
     @client.on_message(filters.command("note", prefixes=".") & filters.me)
     async def note_handler(client, message: Message):
         args = message.text.split(maxsplit=2)

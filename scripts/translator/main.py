@@ -1,13 +1,13 @@
 """Translator — .tr [lang] <text> or reply"""
 
-import asyncio
-from pyrogram import filters
-from pyrogram.enums import ParseMode
-from pyrogram.types import Message
-from scripts._utils import safe_edit
-
 
 def register(client):
+    import asyncio
+    from pyrogram import filters
+    from pyrogram.enums import ParseMode
+    from pyrogram.types import Message
+    from scripts._utils import safe_edit
+
     @client.on_message(filters.command("tr", prefixes=".") & filters.me)
     async def tr_handler(client, message: Message):
         from deep_translator import GoogleTranslator
