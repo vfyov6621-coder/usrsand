@@ -3,7 +3,5 @@
   "version": "1.0",
   "author": "sandusr",
   "description": "Быстрые заметки в Telegram",
-  "command": ".note",
-  "addons": [],
-  "tabs": []
+  "command": ".note"
 }

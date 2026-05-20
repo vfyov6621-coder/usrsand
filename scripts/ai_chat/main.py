@@ -38,6 +38,7 @@ import aiohttp
 from pyrogram import filters
 from pyrogram.enums import ParseMode
 from pyrogram.types import Message
+from scripts._utils import safe_edit
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 HISTORY_FILE = os.path.join(SCRIPT_DIR, "history.json")
@@ -192,28 +193,7 @@ def _truncate_text(text: str, max_len: int = 4096) -> str:
     return text[:max_len - 20] + "\n\n[...] сообщение обрезано"
 
 
-async def _safe_edit(message, text, **kwargs):
-    """edit_text с fallback на reply, если нет прав."""
-    try:
-        return await message.edit_text(text, **kwargs)
-    except Exception:
-        try:
-            return await message.reply(text, quote=True)
-        except Exception:
-            pass
-    return None
 
-
-async def _safe_edit_msg(msg, text, **kwargs):
-    """edit_text для любого сообщения с fallback на reply."""
-    try:
-        return await msg.edit_text(text, **kwargs)
-    except Exception:
-        try:
-            return await msg.reply(text, quote=False)
-        except Exception:
-            pass
-    return None
 
 
 # ════════════════════════════════════════════════════════════════
@@ -445,7 +425,7 @@ async def _handle_analyze(client, message: Message, args_raw: str):
         if message.reply_to_message and message.reply_to_message.from_user:
             target = f"@{message.reply_to_message.from_user.username}" if message.reply_to_message.from_user.username else str(message.reply_to_message.from_user.id)
         else:
-            await _safe_edit(
+            await safe_edit(
                 message,
                 "<b>Использование:</b>\n\n"
                 "<code>.ai analyze @username</code> — анализ (50 сообщений)\n"
@@ -462,7 +442,7 @@ async def _handle_analyze(client, message: Message, args_raw: str):
         if message.reply_to_message and message.reply_to_message.from_user:
             target = f"@{message.reply_to_message.from_user.username}" if message.reply_to_message.from_user.username else str(message.reply_to_message.from_user.id)
         else:
-            await _safe_edit(message, "❌ Нет ответа на сообщение", parse_mode=ParseMode.HTML)
+            await safe_edit(message, "❌ Нет ответа на сообщение", parse_mode=ParseMode.HTML)
             return
         if len(parts) > 1:
             try:
@@ -493,24 +473,24 @@ async def _handle_analyze(client, message: Message, args_raw: str):
     user_id, username = await _resolve_user(client, target, reply_to)
 
     if not user_id:
-        await _safe_edit_msg(status_msg, "❌ Не удалось найти пользователя", parse_mode=ParseMode.HTML)
+        await safe_edit(status_msg, "❌ Не удалось найти пользователя", parse_mode=ParseMode.HTML)
         return
 
-    await _safe_edit_msg(status_msg, f"🔍 Анализирую {username} ({count} сообщений)...\nЭто может занять время.", parse_mode=ParseMode.HTML)
+    await safe_edit(status_msg, f"🔍 Анализирую {username} ({count} сообщений)...\nЭто может занять время.", parse_mode=ParseMode.HTML)
 
     # Собираем сообщения
     chat_id = message.chat.id
     messages = await _fetch_messages(client, chat_id, user_id=user_id, limit=count)
 
     if not messages:
-        await _safe_edit_msg(status_msg, f"❌ Не найдено сообщений от {username} в этом чате", parse_mode=ParseMode.HTML)
+        await safe_edit(status_msg, f"❌ Не найдено сообщений от {username} в этом чате", parse_mode=ParseMode.HTML)
         return
 
     # Строим промпт
     prompt = await _build_analysis_prompt(messages, username, mode="user")
 
     # Отправляем в AI
-    await _safe_edit_msg(status_msg, f"🤖 AI анализирует {len(messages)} сообщений от {username}...\nПодожди, это может занять 30-120 секунд.", parse_mode=ParseMode.HTML)
+    await safe_edit(status_msg, f"🤖 AI анализирует {len(messages)} сообщений от {username}...\nПодожди, это может занять 30-120 секунд.", parse_mode=ParseMode.HTML)
 
     # Для анализа не используем историю чата — отправляем отдельно
     answer = await _ask_ollama(prompt, model, system="", history=[])
@@ -523,7 +503,7 @@ async def _handle_analyze(client, message: Message, args_raw: str):
     full_answer = header + answer
     full_answer = _truncate_text(full_answer, max_len=4096)
 
-    await _safe_edit_msg(
+    await safe_edit(
         status_msg,
         full_answer,
         parse_mode=ParseMode.HTML,
@@ -559,10 +539,10 @@ async def _handle_summary(client, message: Message, args_raw: str):
     messages = await _fetch_messages(client, chat_id, user_id=None, limit=count)
 
     if not messages:
-        await _safe_edit_msg(status_msg, "❌ Не найдено сообщений в этом чате", parse_mode=ParseMode.HTML)
+        await safe_edit(status_msg, "❌ Не найдено сообщений в этом чате", parse_mode=ParseMode.HTML)
         return
 
-    await _safe_edit_msg(status_msg, f"🤖 AI анализирует {len(messages)} сообщений...\nПодожди, это может занять 30-120 секунд.", parse_mode=ParseMode.HTML)
+    await safe_edit(status_msg, f"🤖 AI анализирует {len(messages)} сообщений...\nПодожди, это может занять 30-120 секунд.", parse_mode=ParseMode.HTML)
 
     prompt = await _build_analysis_prompt(messages, mode="chat")
     answer = await _ask_ollama(prompt, model, system="", history=[])
@@ -575,7 +555,7 @@ async def _handle_summary(client, message: Message, args_raw: str):
     full_answer = header + answer
     full_answer = _truncate_text(full_answer, max_len=4096)
 
-    await _safe_edit_msg(
+    await safe_edit(
         status_msg,
         full_answer,
         parse_mode=ParseMode.HTML,
@@ -609,7 +589,7 @@ def register(client):
         if action_word == "on":
             _chat_enabled = True
             _load_history()
-            await _safe_edit(
+            await safe_edit(
                 message,
                 "🟢 <b>AI режим включён</b>\n\n"
                 f"Модель: <code>{model}</code>\n"
@@ -623,21 +603,21 @@ def register(client):
         # .ai off
         if action_word == "off":
             _chat_enabled = False
-            await _safe_edit(message, "🔴 AI режим выключен", parse_mode=ParseMode.HTML)
+            await safe_edit(message, "🔴 AI режим выключен", parse_mode=ParseMode.HTML)
             return
 
         # .ai clear
         if action_word == "clear":
             _conversation_history = []
             _save_history()
-            await _safe_edit(message, "🗑 История диалога очищена", parse_mode=ParseMode.HTML)
+            await safe_edit(message, "🗑 История диалога очищена", parse_mode=ParseMode.HTML)
             return
 
         # .ai model
         if action_word == "model":
             new_model = action_rest.strip()
             if not new_model:
-                await _safe_edit(
+                await safe_edit(
                     message,
                     f"Текущая модель: <code>{model}</code>\n\n"
                     "Сменить: <code>.ai model qwen2.5:3b</code>",
@@ -646,7 +626,7 @@ def register(client):
                 return
             settings["model"] = new_model
             _save_settings(settings)
-            await _safe_edit(
+            await safe_edit(
                 message,
                 f"✅ Модель изменена на: <code>{new_model}</code>\n\n"
                 "Убедись что она скачана:\n"
@@ -660,7 +640,7 @@ def register(client):
             available, models = await _check_ollama()
             if available:
                 models_str = "\n".join(f"  • <code>{m}</code>" for m in models[:10])
-                await _safe_edit(
+                await safe_edit(
                     message,
                     f"🟢 <b>Ollama работает</b>\n\n"
                     f"Текущая модель: <code>{model}</code>\n"
@@ -669,7 +649,7 @@ def register(client):
                     parse_mode=ParseMode.HTML,
                 )
             else:
-                await _safe_edit(
+                await safe_edit(
                     message,
                     "🔴 <b>Ollama не запущена</b>\n\n"
                     "Установи: https://ollama.com/download\n\n"
@@ -684,7 +664,7 @@ def register(client):
         if action_word == "sys":
             new_sys = action_rest.strip()
             if not new_sys:
-                await _safe_edit(
+                await safe_edit(
                     message,
                     f"Текущий системный промпт:\n\n<i>{system}</i>\n\n"
                     "Изменить: <code>.ai sys Ты весёлый бот</code>",
@@ -693,7 +673,7 @@ def register(client):
                 return
             settings["system"] = new_sys
             _save_settings(settings)
-            await _safe_edit(
+            await safe_edit(
                 message,
                 "✅ Системный промпт обновлён:\n\n"
                 f"<i>{new_sys[:200]}</i>",
@@ -713,7 +693,7 @@ def register(client):
 
         # .ai (без аргументов) — справка
         if not action:
-            await _safe_edit(
+            await safe_edit(
                 message,
                 "<b>🤖 AI Chat — локальный ассистент</b>\n\n"
                 "<code>.ai &lt;любой вопрос&gt;</code> — спросить AI\n"

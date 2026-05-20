@@ -1,16 +1,7 @@
 {
   "name": "Translator",
-  "version": "2.0",
+  "version": "1.0",
   "author": "sandusr",
-  "description": "Переводчик текста с поддержкой языковых дополнений",
-  "command": ".tr",
-  "addons": [
-    {"file": "addons/ru.py", "name": "Русский", "command": ".tra", "enabled": true, "description": "Перевод на русский"},
-    {"file": "addons/de.py", "name": "Deutsch", "command": ".trd", "enabled": true, "description": "Übersetzung ins Deutsche"},
-    {"file": "addons/zh.py", "name": "简体中文", "command": ".trz", "enabled": true, "description": "翻译成简体中文"},
-    {"file": "addons/fr.py", "name": "Français", "command": ".trf", "enabled": true, "description": "Traduction en français"},
-    {"file": "addons/uk.py", "name": "Українська", "command": ".tru", "enabled": true, "description": "Переклад українською"},
-    {"file": "addons/be.py", "name": "Беларуская", "command": ".trb", "enabled": true, "description": "Пераклад на беларускую"}
-  ],
-  "tabs": []
+  "description": "Переводчик текста",
+  "command": ".tr"
 }

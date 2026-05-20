@@ -1,31 +1,24 @@
-"""
-Translator - main module
-Generic translation: .tr [lang] <text> or reply
-"""
+"""Translator — .tr [lang] <text> or reply"""
 
-import sys, os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import asyncio
+from pyrogram import filters
+from pyrogram.enums import ParseMode
+from pyrogram.types import Message
 from scripts._utils import safe_edit
 
-def register(client):
-    """Register handlers when script is loaded."""
-    from pyrogram import filters
-    from pyrogram.enums import ParseMode
-    from pyrogram.types import Message
-    from deep_translator import GoogleTranslator
-    import asyncio
 
+def register(client):
     @client.on_message(filters.command("tr", prefixes=".") & filters.me)
     async def tr_handler(client, message: Message):
-        """[lang] <text> - Translate text or reply to a message"""
+        from deep_translator import GoogleTranslator
+
         args = message.text.split(maxsplit=1)
 
-        # Parse language and text
         if len(args) < 2:
             text = None
             lang = "en"
         else:
-            potential_lang = args[1].split()[0] if len(args) > 1 else ""
+            potential_lang = args[1].split()[0] if args[1] else ""
             if len(potential_lang) == 2 and potential_lang.isalpha():
                 lang = potential_lang
                 try:
@@ -33,10 +26,9 @@ def register(client):
                 except IndexError:
                     text = None
             else:
-                text = args[1] if len(args) > 1 else None
+                text = args[1]
                 lang = "en"
 
-        # If no text provided, try to get from reply
         if not text:
             if message.reply_to_message:
                 text = message.reply_to_message.text
@@ -46,10 +38,7 @@ def register(client):
             else:
                 await safe_edit(message,
                     "Используйте: <code>.tr [lang] &lt;текст&gt;</code>\n"
-                    "Или ответьте на сообщение командой <code>.tr [lang]</code>\n\n"
-                    "Примеры:\n"
-                    "<code>.tr en привет</code> - перевести на английский\n"
-                    "<code>.tr de</code> (ответ на сообщение) - перевести на немецкий",
+                    "Или ответьте на сообщение командой <code>.tr [lang]</code>",
                     parse_mode=ParseMode.HTML
                 )
                 return
@@ -58,24 +47,14 @@ def register(client):
 
         try:
             loop = asyncio.get_running_loop()
-            translated_text = await loop.run_in_executor(
+            translated = await loop.run_in_executor(
                 None,
                 lambda: GoogleTranslator(source="auto", target=lang).translate(text)
             )
-
-            await safe_edit(message,
-                f"<b>Перевод ({lang}):</b>\n\n"
-                f"<code>{translated_text}</code>",
-                parse_mode=ParseMode.HTML
-            )
-
+            await safe_edit(message, f"<b>Перевод ({lang}):</b>\n\n<code>{translated}</code>", parse_mode=ParseMode.HTML)
         except Exception as e:
             await safe_edit(message, f"Ошибка перевода: {str(e)}")
 
 
 def on_load():
-    print("[Translator] Script loaded. Use .tr [lang] <text>")
-
-
-def on_unload():
-    print("[Translator] Script unloaded")
+    print("[translator] Loaded. .tr [lang] <text>")

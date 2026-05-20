@@ -1,20 +1,18 @@
-"""Notes - main module
-Quick notes in Telegram. .note save/get/list/del/set, .n <name>
-"""
+"""Notes — quick notes in Telegram. .note save/get/list/del/set, .n <name>"""
 
-import sys, os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from scripts._utils import safe_edit
 import json
+import os
+from pyrogram import filters
+from pyrogram.enums import ParseMode
+from pyrogram.types import Message
+from scripts._utils import safe_edit
 
-NOTES_FILE = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "scripts_custom",
-    "notes.json",
-)
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(os.path.dirname(SCRIPT_DIR), "scripts_custom")
+NOTES_FILE = os.path.join(DATA_DIR, "notes.json")
 
 
-def _load() -> dict:
+def _load():
     try:
         if os.path.exists(NOTES_FILE):
             with open(NOTES_FILE, "r", encoding="utf-8") as f:
@@ -24,17 +22,13 @@ def _load() -> dict:
     return {}
 
 
-def _save(data: dict):
-    os.makedirs(os.path.dirname(NOTES_FILE), exist_ok=True)
+def _save(data):
+    os.makedirs(DATA_DIR, exist_ok=True)
     with open(NOTES_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
 
 def register(client):
-    from pyrogram import filters
-    from pyrogram.enums import ParseMode
-    from pyrogram.types import Message
-
     @client.on_message(filters.command("note", prefixes=".") & filters.me)
     async def note_handler(client, message: Message):
         args = message.text.split(maxsplit=2)
@@ -56,18 +50,10 @@ def register(client):
         if action == "list":
             notes = _load()
             if not notes:
-                await safe_edit(message,
-                    "📝 Заметок нет.\n\n<code>.note save имя текст</code>",
-                    parse_mode=ParseMode.HTML,
-                )
+                await safe_edit(message, "📝 Заметок нет.\n\n<code>.note save имя текст</code>", parse_mode=ParseMode.HTML)
                 return
-            lines = "\n".join(
-                f"  {i}. <code>{k}</code>" for i, k in enumerate(sorted(notes.keys()), 1)
-            )
-            await safe_edit(message,
-                f"📝 <b>Заметки ({len(notes)}):</b>\n\n{lines}",
-                parse_mode=ParseMode.HTML,
-            )
+            lines = "\n".join(f"  {i}. <code>{k}</code>" for i, k in enumerate(sorted(notes.keys()), 1))
+            await safe_edit(message, f"📝 <b>Заметки ({len(notes)}):</b>\n\n{lines}", parse_mode=ParseMode.HTML)
             return
 
         if action == "del":
@@ -91,11 +77,7 @@ def register(client):
             name = args[2].strip()
             notes = _load()
             if name in notes:
-                text = notes[name]
-                await safe_edit(message,
-                    f"📝 <b>{name}:</b>\n\n{text}",
-                    parse_mode=ParseMode.HTML,
-                )
+                await safe_edit(message, f"📝 <b>{name}:</b>\n\n{notes[name]}", parse_mode=ParseMode.HTML)
             else:
                 await safe_edit(message, f"❌ Заметка <b>{name}</b> не найдена", parse_mode=ParseMode.HTML)
             return
@@ -146,17 +128,10 @@ def register(client):
         name = args[1].strip()
         notes = _load()
         if name in notes:
-            await safe_edit(message,
-                f"📝 <b>{name}:</b>\n\n{notes[name]}",
-                parse_mode=ParseMode.HTML,
-            )
+            await safe_edit(message, f"📝 <b>{name}:</b>\n\n{notes[name]}", parse_mode=ParseMode.HTML)
         else:
             await safe_edit(message, f"❌ Заметка <b>{name}</b> не найдена", parse_mode=ParseMode.HTML)
 
 
 def on_load():
-    print("[Notes] Loaded. .note save/get/list/del/set, .n <name>")
-
-
-def on_unload():
-    print("[Notes] Unloaded")
+    print("[notes] Loaded. .note save/get/list/del/set, .n")

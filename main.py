@@ -1,119 +1,106 @@
+"""
+sandusr — Telegram userbot
+Entry point. No web panel, no Flask — just the bot.
+"""
 import os
 import sys
-import platform
 import asyncio
-import threading
 import logging
 import traceback
-from datetime import datetime
 
-# === Windows fix ===
 if sys.platform == "win32":
     try:
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     except Exception:
         pass
 
-import nest_asyncio
-nest_asyncio.apply()
+from pyrogram import Client, filters, idle
+from pyrogram.enums import ParseMode
+from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
-from flask import Flask
 from config import Config
-from web import create_web_app
-from bot import run_bot
+from loader import load_all_scripts
 
-# ═══════════════════════════════════════════════════════════════════
-#  Error logger — сохраняет ошибки в ops/
-# ═══════════════════════════════════════════════════════════════════
-
-OPS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ops")
-os.makedirs(OPS_DIR, exist_ok=True)
-
-_handler_errors_count = 0
-_MAX_HANDLER_ERRORS = 50  # лимит чтобы не заспамить
-
-
-class _ErrorFileHandler(logging.Handler):
-    """Логирует ERROR и выше в отдельный .txt файл в ops/."""
-
-    def emit(self, record):
-        if record.levelno < logging.ERROR:
-            return
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = os.path.join(OPS_DIR, f"error_{ts}.txt")
-        try:
-            msg = self.format(record) + "\n\n" + (
-                record.exc_text or traceback.format_exc()
-                if record.exc_info else "No traceback"
-            )
-            with open(filename, "w", encoding="utf-8") as f:
-                f.write(f"Time:     {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                f.write(f"Logger:   {record.name}\n")
-                f.write(f"Level:    {record.levelname}\n")
-                f.write(f"Message:\n{msg}\n")
-        except Exception:
-            pass
-
-
-# Logging setup
+# Simple logging
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[
-        logging.StreamHandler(),
-    ]
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 )
+logger = logging.getLogger("sandusr")
 
-# Добавляем файловый хендлер для ошибок
-_error_handler = _ErrorFileHandler()
-_error_handler.setLevel(logging.ERROR)
-_error_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
-logging.getLogger().addHandler(_error_handler)
+VERSION = Config.VERSION
+BOT_NAME = "sandusr"
 
-logger = logging.getLogger("userbot")
+# ── .mm command ──
+MM_KEYBOARD = InlineKeyboardMarkup([
+    [InlineKeyboardButton("🏓 Пинг", callback_data="mm_ping")],
+    [InlineKeyboardButton("ℹ️ Инфо", callback_data="mm_info")],
+    [InlineKeyboardButton("👤 Владелец", callback_data="mm_owner")],
+])
 
-# Global Flask app (needed for gunicorn/heroku)
-app = create_web_app()
+async def mm_cmd(client, message: Message):
+    text = f"🤖 <b>{BOT_NAME}</b> v{VERSION}\n\nВыберите действие:"
+    try:
+        await message.edit_text(text, reply_markup=MM_KEYBOARD, parse_mode=ParseMode.HTML)
+    except Exception:
+        await message.reply(text, reply_markup=MM_KEYBOARD, parse_mode=ParseMode.HTML)
 
+async def mm_cb(client, callback: CallbackQuery):
+    d = callback.data
+    if d == "mm_ping":
+        import time
+        t0 = time.time()
+        m = await callback.message.edit_text("🏓 Пинг...")
+        ms = int((time.time() - t0) * 1000)
+        await m.edit_text(f"🏓 <b>Пинг: {ms}ms</b>", parse_mode=ParseMode.HTML)
+    elif d == "mm_info":
+        await callback.message.edit_text(
+            f"🤖 <b>{BOT_NAME}</b> v{VERSION}\n"
+            f"📝 Модулей загружено: <b>{len(_loaded_scripts)}</b>",
+            parse_mode=ParseMode.HTML
+        )
+    elif d == "mm_owner":
+        me = client.me
+        await callback.message.edit_text(
+            f"👤 <b>Владелец</b>\n\n"
+            f"📌 Имя: <b>{me.first_name}</b>\n"
+            f"📌 ID: <code>{me.id}</code>\n"
+            + (f"📌 Username: @{me.username}\n" if me.username else ""),
+            parse_mode=ParseMode.HTML
+        )
+    await callback.answer()
+
+async def main():
+    if not Config.API_ID or not Config.API_HASH:
+        logger.error("API_ID and API_HASH not configured!")
+        return
+
+    client = Client(
+        name="userbot_session",
+        api_id=Config.API_ID,
+        api_hash=Config.API_HASH,
+        phone_number=Config.PHONE or None,
+        session_string=Config.SESSION_STRING or None,
+        workdir=Config.BASE_DIR,
+    )
+
+    # Register built-in commands
+    client.add_handler(MessageHandler(mm_cmd, filters.command("mm", prefixes=".") & filters.me))
+    client.add_handler(CallbackQueryHandler(mm_cb, filters.regex(r"^mm_")))
+
+    # Load all scripts
+    global _loaded_scripts
+    _loaded_scripts = load_all_scripts(client)
+
+    logger.info(f"Loaded {len(_loaded_scripts)} scripts: {', '.join(_loaded_scripts)}")
+
+    async with client:
+        me = await client.get_me()
+        logger.info(f"Started as @{me.username or me.first_name} (ID: {me.id})")
+        await idle()
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))
-    plat = platform.system()
-    ver = sys.version.split()[0]
-    logger.info(f"Platform: {plat} | Python: {ver} | Logs dir: ops/")
-
-    # Start Flask in a daemon thread (Flask is sync, no event loop needed)
-    flask_thread = threading.Thread(
-        target=lambda: app.run(
-            host="0.0.0.0",
-            port=port,
-            debug=False,
-            threaded=True,
-            use_reloader=False,
-        ),
-        daemon=True,
-    )
-    flask_thread.start()
-
-    logger.info(f"Web panel: http://localhost:{port}")
-    logger.info("Starting userbot...")
-
-    # Run bot on the MAIN thread's event loop (avoids "different loop" errors)
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    nest_asyncio.apply(loop)
-
     try:
-        loop.run_until_complete(run_bot())
+        asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("Stopped by user (Ctrl+C)")
-    except Exception as e:
-        logger.critical(f"Fatal error: {e}")
-        logger.critical(traceback.format_exc())
-    finally:
-        try:
-            loop.run_until_complete(loop.shutdown_asyncgens())
-        except Exception:
-            pass
-        loop.close()
-        logger.info("Shutdown complete")
+        logger.info("Stopped")

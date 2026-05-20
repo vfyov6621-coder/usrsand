@@ -1,9 +1,7 @@
 {
   "name": "Weather",
-  "version": "4.0",
+  "version": "1.0",
   "author": "sandusr",
   "description": "Погода через Open-Meteo с ASCII-арт",
-  "command": ".wea",
-  "addons": [],
-  "tabs": []
+  "command": ".wea"
 }

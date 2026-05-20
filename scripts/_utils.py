@@ -1,12 +1,12 @@
 """
-Общие утилиты для всех скриптов sandusr.
-Импортируй в скриптах: from scripts._utils import safe_edit
+Shared utilities for sandusr scripts.
+Import: from scripts._utils import safe_edit
 """
 
-import sys
 import os
+import sys
 
-# Добавляем корень проекта в sys.path чтобы импорт работал
+# Ensure project root is in sys.path
 _BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _BASE not in sys.path:
     sys.path.insert(0, _BASE)
@@ -14,17 +14,9 @@ if _BASE not in sys.path:
 
 async def safe_edit(message, text, **kwargs):
     """
-    Безопасный edit_text с fallback на reply.
-
-    В каналах и группах без прав редактирования edit_text кидает
-    ChatWriteForbidden (403). Эта функция пытается edit_text,
-    а если не получается — отправляет reply.
-
-    Args:
-        message: Pyrogram Message object
-        text: текст сообщения
-        **kwargs: дополнительные параметры для edit_text/reply
-                  (parse_mode, disable_web_page_preview, и т.д.)
+    Safe edit_text with fallback to reply.
+    In channels without edit rights, edit_text throws ChatWriteForbidden.
+    This tries edit_text first, then falls back to reply.
     """
     try:
         return await message.edit_text(text, **kwargs)

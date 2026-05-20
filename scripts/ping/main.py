@@ -1,13 +1,11 @@
-"""Ping - main module"""
+"""Ping — simple userbot ping."""
 
-import sys, os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from pyrogram import filters
+from pyrogram.types import Message
 from scripts._utils import safe_edit
 
-def register(client):
-    from pyrogram import filters
-    from pyrogram.types import Message
 
+def register(client):
     @client.on_message(filters.command("ping", prefixes=".") & filters.me)
     async def ping_handler(client, message: Message):
         import time
@@ -19,8 +17,4 @@ def register(client):
 
 
 def on_load():
-    print("[ping] Script loaded. Use .ping")
-
-
-def on_unload():
-    print("[ping] Script unloaded")
+    print("[ping] Loaded. .ping")

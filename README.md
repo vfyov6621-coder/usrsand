@@ -1,100 +1,51 @@
-# sandusr — Telegram UserBot
+# sandusr — Telegram Userbot v3.0
 
-Юзербот на Pyrofork с динамической загрузкой скриптов, веб-панелью и поддержкой Heroku.
-
-## Функции
-
-- **Папочная система скриптов** — каждый скрипт в отдельной папке с `meta.json`
-- **Аддоны** — дополнения к скриптам (переводчик: RU, DE, ZH, FR, UK, BE)
-- **Веб-вкладки** — скрипты могут добавлять свои вкладки в веб-панель
-- **Автозапуск** — скрипты загружаются автоматически при старте
-- **Веб-панель** — консоль, управление скриптами, бэкапы, дебаг
+Модульный Telegram юзербот на Pyrofork.
 
 ## Установка
 
-1. Клонируйте репозиторий
-2. Скопируйте `.env.example` в `.env` и заполните API данные
-3. Установите зависимости: `pip install -r requirements.txt`
-4. Запустите: `bash start.sh` (Linux) или `start.bat` (Windows)
-5. Веб-панель: http://localhost:8080
+1. Клонируй репозиторий
+2. Создай `.env` файл:
+```
+API_ID=your_api_id
+API_HASH=your_api_hash
+PHONE=+79991234567
+```
+3. Установи зависимости: `pip install -r requirements.txt`
+4. Запусти: `python main.py`
 
-## Встроенные команды (Telegram)
+## Команды
 
 | Команда | Описание |
 |---------|----------|
-| `.mm` | Меню бота (пинг, инфо, владелец) с фото |
-| `.mf` | Установить фото меню (ответ на фото) |
-| `.lm` | Управление скриптами |
-| `.lm list` | Список скриптов |
-| `.lm load <id>` | Загрузить скрипт |
-| `.lm unload <id>` | Выгрузить скрипт |
-| `.lm reload <id>` | Перезагрузить скрипт |
-| `.lm info <id>` | Информация о скрипте |
+| `.mm` | Меню бота |
+| `.ping` | Пинг |
+| `.note` | Заметки (save/get/list/del/set) |
+| `.n <name>` | Быстрый вызов заметки |
+| `.wea <city>` | Погода |
+| `.tr [lang] <text>` | Перевод |
+| `.tra/.trd/.trz/.trf/.tru/.trb` | Перевод (ответ на соо) |
+| `.ai <text>` | AI ассистент (требует Ollama) |
 
-## Скрипты
+## AI Chat
 
-| Скрипт | Команда | Описание |
-|--------|---------|----------|
-| Translator | `.tr` | Переводчик (generic: любой язык) |
-| .tra | `.tra` | Перевод на русский (ответ) |
-| .trd | `.trd` | Перевод на немецкий |
-| .trz | `.trz` | Перевод на китайский |
-| .trf | `.trf` | Перевод на французский |
-| .tru | `.tru` | Перевод на украинский |
-| .trb | `.trb` | Перевод на белорусский |
-| Weather | `.wea` | Погода с ASCII-артом |
-| Notes | `.note` | Быстрые заметки |
-| Ping | `.ping` | Пинг юзербота |
-| TimeName | `.tn` | Время МСК в нике |
-| Who TGK | `.whotgk` | Информация о юзере TGK |
-| Yandex Music | `.np` | Что слушаешь в Яндекс Музыке |
-
-## Структура проекта
-
+Для `.ai` нужен установленный [Ollama](https://ollama.com):
 ```
-sandusr/
-├── main.py              — точка входа
-├── bot.py               — ядро юзербота (.mm, .mf, .lm)
-├── config.py            — конфигурация
-├── loader.py            — загрузчик скриптов
-├── web.py               — Flask API для веб-панели
-├── templates/
-│   └── index.html       — веб-панель (SPA)
-├── scripts/             — встроенные скрипты (git-tracked)
-│   ├── bot_photo.jpg    — фото для .mm меню
-│   ├── translator/
-│   │   ├── meta.json
-│   │   ├── main.py
-│   │   └── addons/
-│   │       ├── ru.py
-│   │       ├── de.py
-│   │       ├── zh.py
-│   │       ├── fr.py
-│   │       ├── uk.py
-│   │       └── be.py
-│   ├── weather/
-│   ├── notes/
-│   ├── ping/
-│   ├── time_name/
-│   ├── whotgk/
-│   └── yandex_music/
-├── scripts_custom/      — пользовательские скрипты (gitignored)
-├── backups/             — бэкапы (gitignored)
-├── requirements.txt
-├── Procfile
-└── SCRIPTS.md           — документация по скриптам
+ollama pull qwen2.5:1.5b
+ollama serve
 ```
 
-## Документация по скриптам
+## Структура
 
-Подробное руководство по созданию скриптов: [SCRIPTS.md](SCRIPTS.md)
-
-## Зависимости
-
-- Python 3.9+
-- pyrofork >= 2.3.0
-- flask == 3.0.3
-- gunicorn == 22.0.0
-- python-dotenv == 1.0.1
-- nest_asyncio == 1.6.0
-- deep-translator >= 1.9.0
+```
+main.py          — точка входа
+config.py        — конфигурация
+loader.py        — загрузчик скриптов
+scripts/         — модули
+  _utils.py      — общие утилиты
+  ping/          — пинг
+  notes/         — заметки
+  weather/       — погода
+  translator/    — переводчик + аддоны
+  ai_chat/       — AI через Ollama
+```
