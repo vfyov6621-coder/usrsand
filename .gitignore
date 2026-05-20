@@ -4,5 +4,6 @@ __pycache__/
 scripts_custom/
 ops/
 backups/
+logs/
 *.session
 *.session-journal
