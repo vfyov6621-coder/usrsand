@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Яндекс Музыка — поиск, скачивание треков, тексты песен, чарт и лайки."""
 
 import os
@@ -7,8 +9,6 @@ import asyncio
 import tempfile
 import shutil
 from pathlib import Path
-
-from __future__ import annotations
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 TOKEN_FILE = os.path.join(SCRIPT_DIR, "token.txt")
