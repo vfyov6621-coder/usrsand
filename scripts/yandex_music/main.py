@@ -1,0 +1,871 @@
+"""Яндекс Музыка — поиск, скачивание треков, тексты песен, чарт и лайки."""
+
+import os
+import json
+import logging
+import asyncio
+import tempfile
+import shutil
+from pathlib import Path
+
+from __future__ import annotations
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+TOKEN_FILE = os.path.join(SCRIPT_DIR, "token.txt")
+
+log = logging.getLogger("sandusr.scripts.yandex_music")
+
+_yandex_client = None
+
+
+# ───────────────────── helpers ─────────────────────
+
+def _get_token() -> str:
+    """Read saved Yandex Music token from file."""
+    if os.path.exists(TOKEN_FILE):
+        with open(TOKEN_FILE, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    return ""
+
+
+def _save_token(token: str) -> None:
+    """Save Yandex Music token to file."""
+    with open(TOKEN_FILE, "w", encoding="utf-8") as f:
+        f.write(token.strip())
+
+
+def _get_client():
+    """Return existing sync client or create + init a new one."""
+    global _yandex_client
+    if _yandex_client is not None:
+        return _yandex_client
+    token = _get_token()
+    if not token:
+        raise ValueError("Токен не установлен. Используй .ya token <токен>")
+    from yandex_music import Client
+    _yandex_client = Client(token).init()
+    return _yandex_client
+
+
+def _reset_client() -> None:
+    """Drop cached client (e.g. after token change)."""
+    global _yandex_client
+    _yandex_client = None
+
+
+async def _run_sync(func, *args, **kwargs):
+    """Run a synchronous function in a thread to avoid blocking the loop."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, lambda: func(*args, **kwargs))
+
+
+def _fmt_dur(ms: int | None) -> str:
+    """Format milliseconds -> M:SS."""
+    if not ms:
+        return "\u2014"
+    s = ms // 1000
+    return f"{s // 60}:{s % 60:02d}"
+
+
+def _cover_url(cover_uri: str | None, size: str = "200x200") -> str:
+    """Convert internal cover URI to a full https URL."""
+    if not cover_uri:
+        return ""
+    return f"https://{cover_uri.replace('%%', size)}"
+
+
+def _track_line(idx: int, track) -> str:
+    """Single-line representation of a track for lists."""
+    artists = ", ".join(a.name for a in track.artists) if track.artists else "?"
+    dur = _fmt_dur(getattr(track, "duration_ms", None))
+    return f"<b>{idx}.</b> {track.title} \u2014 {artists} <i>({dur})</i>"
+
+
+def _clean_filename(name: str) -> str:
+    """Remove characters illegal in file names."""
+    return "".join(c for c in name if c not in r'\/:*?"<>|')
+
+
+# ───────────────────── download & send ─────────────────────
+
+async def _download_send(client, message, track):
+    """Download a track, send it as audio, clean up temp files."""
+    temp_dir = tempfile.mkdtemp()
+    try:
+        ym = _get_client()
+        infos = await _run_sync(ym.tracks_download_info, track.id)
+        if not infos:
+            await message.edit_text("\u274c Не удалось получить информацию для скачивания")
+            return
+
+        best = max(
+            [i for i in infos if not i.preview],
+            key=lambda x: x.bitrate_in_kbps,
+            default=None,
+        )
+        if not best:
+            best = infos[0]
+
+        title = track.title or "track"
+        artist = track.artists[0].name if track.artists else "Unknown"
+        safe_name = _clean_filename(f"{title} - {artist}")
+        filepath = os.path.join(temp_dir, f"{safe_name}.mp3")
+
+        await message.edit_text(f"\u23ec Скачиваю {best.bitrate_in_kbps} kbps\u2026")
+        best.download(filepath)
+
+        # fetch cover for thumbnail
+        thumb_path = None
+        if getattr(track, "cover_uri", None):
+            try:
+                import urllib.request
+                thumb_url = _cover_url(track.cover_uri, "300x300")
+                thumb_path = os.path.join(temp_dir, "cover.jpg")
+                urllib.request.urlretrieve(thumb_url, thumb_path)
+            except Exception:
+                pass
+
+        artists_str = ", ".join(a.name for a in track.artists) if track.artists else ""
+        duration_s = (track.duration_ms or 0) // 1000
+
+        await message.edit_text("\ud83d\udce4 Отправляю\u2026")
+
+        try:
+            await client.send_audio(
+                chat_id=message.chat.id,
+                audio=filepath,
+                title=title,
+                performer=artists_str,
+                duration=duration_s,
+                thumb=thumb_path,
+            )
+            await message.delete()
+        except Exception:
+            # fallback to document if audio fails (e.g. size limit)
+            try:
+                await client.send_document(
+                    chat_id=message.chat.id,
+                    document=filepath,
+                    caption=f"\ud83c\udfb5 {title} \u2014 {artists_str}",
+                )
+                await message.delete()
+            except Exception as e2:
+                log.error("send_document failed: %s", e2, exc_info=True)
+                await message.edit_text(f"\u274c Не удалось отправить: {e2}")
+
+    except Exception as e:
+        log.error("download error: %s", e, exc_info=True)
+        await message.edit_text(f"\u274c Ошибка скачивания: {e}")
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+async def _download_send_callback(client, callback_query, track):
+    """Same as _download_send but triggered from an inline button."""
+    await callback_query.answer("\u23ec Скачиваю\u2026")
+    temp_dir = tempfile.mkdtemp()
+    try:
+        ym = _get_client()
+        infos = await _run_sync(ym.tracks_download_info, track.id)
+        if not infos:
+            await callback_query.answer("\u274c Не удалось скачать", show_alert=True)
+            return
+
+        best = max(
+            [i for i in infos if not i.preview],
+            key=lambda x: x.bitrate_in_kbps,
+            default=None,
+        )
+        if not best:
+            best = infos[0]
+
+        title = track.title or "track"
+        artist = track.artists[0].name if track.artists else "Unknown"
+        safe_name = _clean_filename(f"{title} - {artist}")
+        filepath = os.path.join(temp_dir, f"{safe_name}.mp3")
+
+        best.download(filepath)
+
+        thumb_path = None
+        if getattr(track, "cover_uri", None):
+            try:
+                import urllib.request
+                thumb_url = _cover_url(track.cover_uri, "300x300")
+                thumb_path = os.path.join(temp_dir, "cover.jpg")
+                urllib.request.urlretrieve(thumb_url, thumb_path)
+            except Exception:
+                pass
+
+        artists_str = ", ".join(a.name for a in track.artists) if track.artists else ""
+        duration_s = (track.duration_ms or 0) // 1000
+
+        msg = callback_query.message
+        await client.send_audio(
+            chat_id=msg.chat.id,
+            audio=filepath,
+            title=title,
+            performer=artists_str,
+            duration=duration_s,
+            thumb=thumb_path,
+            reply_to_message_id=msg.reply_to_message_id,
+        )
+    except Exception as e:
+        log.error("callback download error: %s", e, exc_info=True)
+        await callback_query.answer(f"\u274c {e}", show_alert=True)
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+# ───────────────────── command handlers ─────────────────────
+
+async def _cmd_help(message) -> None:
+    """Show help text."""
+    from pyrogram.enums import ParseMode
+
+    text = (
+        "<b>\ud83c\udfb5 Яндекс Музыка</b>\n\n"
+        "<code>.ya s</code> <i>запрос</i> \u2014 поиск треков\n"
+        "<code>.ya d</code> <i>id</i> \u2014 скачать/отправить трек\n"
+        "<code>.ya l</code> <i>id</i> \u2014 текст песни\n"
+        "<code>.ya a</code> <i>запрос</i> \u2014 поиск исполнителя\n"
+        "<code>.ya b</code> <i>запрос</i> \u2014 поиск альбома\n"
+        "<code>.ya liked</code> \u2014 любимые треки\n"
+        "<code>.ya chart</code> \u2014 чарт\n"
+        "<code>.ya token</code> <i>токен</i> \u2014 установить токен\n\n"
+        "<i>Получить токен: </i>"
+        '<a href="https://oauth.yandex.ru/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d">'
+        "OAuth авторизация</a>"
+    )
+    try:
+        await message.edit_text(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+    except Exception:
+        await message.reply(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+
+
+async def _cmd_search(client, message) -> None:
+    """Search tracks by query."""
+    from pyrogram.enums import ParseMode
+    from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+    parts = message.text.split(maxsplit=2)
+    if len(parts) < 3:
+        try:
+            await message.edit_text(
+                "\u274c Использование: <code>.ya s запрос</code>",
+                parse_mode=ParseMode.HTML,
+            )
+        except Exception:
+            pass
+        return
+
+    query = parts[2]
+    try:
+        await message.edit_text("\ud83d\udd0d Ищу\u2026")
+        ym = _get_client()
+        result = await _run_sync(ym.search, query, "track")
+
+        if not result or not result.tracks or not result.tracks.results:
+            try:
+                await message.edit_text("\u2764\ufe0f Ничего не найдено")
+            except Exception:
+                pass
+            return
+
+        lines = [f"<b>\ud83d\udd0d Результаты: {query}</b>\n"]
+        buttons: list[list[InlineKeyboardButton]] = []
+        for i, track in enumerate(result.tracks.results[:10], 1):
+            lines.append(_track_line(i, track))
+            if track.available:
+                label = f"\u2b07 {i}. {track.title[:30]}"
+                buttons.append([InlineKeyboardButton(label, callback_data=f"ym_dl:{track.id}")])
+
+        text = "\n".join(lines)
+        if len(text) > 4000:
+            text = text[:3900] + "\n\n<i>\u2026обрезано</i>"
+
+        kw = dict(text=text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+        if buttons:
+            kw["reply_markup"] = InlineKeyboardMarkup(buttons)
+
+        try:
+            await message.edit_text(**kw)
+        except Exception:
+            await message.reply(**kw)
+
+    except ValueError as e:
+        try:
+            await message.edit_text(f"\u274c {e}")
+        except Exception:
+            pass
+    except Exception as e:
+        log.error("search error: %s", e, exc_info=True)
+        try:
+            await message.edit_text(f"\u274c Ошибка поиска: {e}")
+        except Exception:
+            pass
+
+
+async def _cmd_download(client, message) -> None:
+    """Download and send a track by its ID."""
+    parts = message.text.split(maxsplit=2)
+    if len(parts) < 3:
+        try:
+            await message.edit_text(
+                "\u274c Использование: <code>.ya d id_трека</code>",
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
+        return
+
+    track_id = parts[2].strip()
+    try:
+        ym = _get_client()
+        await message.edit_text("\ud83c\udfb5 Загружаю информацию\u2026")
+        tracks = await _run_sync(ym.tracks, track_id)
+        if not tracks:
+            try:
+                await message.edit_text("\u274c Трек не найден")
+            except Exception:
+                pass
+            return
+        await _download_send(client, message, tracks[0])
+    except ValueError as e:
+        try:
+            await message.edit_text(f"\u274c {e}")
+        except Exception:
+            pass
+    except Exception as e:
+        log.error("download-by-id error: %s", e, exc_info=True)
+        try:
+            await message.edit_text(f"\u274c Ошибка: {e}")
+        except Exception:
+            pass
+
+
+async def _cmd_lyrics(message) -> None:
+    """Fetch and display lyrics for a track."""
+    from pyrogram.enums import ParseMode
+
+    parts = message.text.split(maxsplit=2)
+    if len(parts) < 3:
+        try:
+            await message.edit_text(
+                "\u274c Использование: <code>.ya l id_трека</code>",
+                parse_mode=ParseMode.HTML,
+            )
+        except Exception:
+            pass
+        return
+
+    track_id = parts[2].strip()
+    try:
+        ym = _get_client()
+        await message.edit_text("\ud83d\udcdd Загружаю текст\u2026")
+
+        tracks = await _run_sync(ym.tracks, track_id)
+        if not tracks:
+            try:
+                await message.edit_text("\u274c Трек не найден")
+            except Exception:
+                pass
+            return
+
+        track = tracks[0]
+        lyrics_data = await _run_sync(ym.tracks_lyrics, track.id, format_="TEXT")
+
+        if not lyrics_data:
+            artists = ", ".join(a.name for a in track.artists) if track.artists else ""
+            try:
+                await message.edit_text(
+                    f"\u274c Текст песни недоступен для:\n"
+                    f"\ud83c\udfb5 <b>{track.title}</b> \u2014 {artists}",
+                    parse_mode=ParseMode.HTML,
+                )
+            except Exception:
+                pass
+            return
+
+        # extract plain text from the lyrics object
+        lyrics_text = ""
+        lyr = getattr(lyrics_data, "lyrics", None)
+        if lyr is not None:
+            lyrics_text = getattr(lyr, "full_lyrics", None) or getattr(lyr, "text", "") or ""
+
+        if not lyrics_text:
+            try:
+                await message.edit_text("\u274c Текст песни пуст или недоступен")
+            except Exception:
+                pass
+            return
+
+        artists = ", ".join(a.name for a in track.artists) if track.artists else ""
+        header = f"\ud83c\udfb5 <b>{track.title}</b> \u2014 {artists}\n\n"
+
+        full = header + lyrics_text
+        if len(full) > 4000:
+            full = full[:3900] + "\n\n<i>\u2026обрезано</i>"
+
+        try:
+            await message.edit_text(full, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+        except Exception:
+            await message.reply(full, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+
+    except ValueError as e:
+        try:
+            await message.edit_text(f"\u274c {e}")
+        except Exception:
+            pass
+    except Exception as e:
+        log.error("lyrics error: %s", e, exc_info=True)
+        try:
+            await message.edit_text(f"\u274c Ошибка: {e}")
+        except Exception:
+            pass
+
+
+async def _cmd_artist(client, message) -> None:
+    """Search artist and show info + popular tracks."""
+    from pyrogram.enums import ParseMode
+    from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+    parts = message.text.split(maxsplit=2)
+    if len(parts) < 3:
+        try:
+            await message.edit_text(
+                "\u274c Использование: <code>.ya a запрос</code>",
+                parse_mode=ParseMode.HTML,
+            )
+        except Exception:
+            pass
+        return
+
+    query = parts[2]
+    try:
+        await message.edit_text("\ud83c\udfa4 Ищу исполнителя\u2026")
+        ym = _get_client()
+        result = await _run_sync(ym.search, query, "artist")
+
+        if not result or not result.artists or not result.artists.results:
+            try:
+                await message.edit_text("\u274c Исполнитель не найден")
+            except Exception:
+                pass
+            return
+
+        artist = result.artists.results[0]
+        lines = [f"\ud83c\udfa4 <b>{artist.name}</b>"]
+
+        genres = getattr(artist, "genres", None)
+        if genres:
+            lines.append(f"\ud83c\udfb5 Жанры: {', '.join(genres)}")
+
+        counts = getattr(artist, "counts", None)
+        if counts:
+            t = getattr(counts, "tracks", None)
+            a = getattr(counts, "albums", None)
+            if t:
+                lines.append(f"\ud83c\udfb5 Треков: {t}")
+            if a:
+                lines.append(f"\ud83d\udcbf Альбомов: {a}")
+
+        likes = getattr(artist, "likes_count", None)
+        if likes:
+            lines.append(f"\u2764\ufe0f Лайков: {likes}")
+
+        desc = getattr(artist, "description", None)
+        if desc:
+            desc_text = getattr(desc, "text", str(desc))
+            if desc_text:
+                lines.append(f"\n{desc_text[:800]}")
+
+        buttons: list[list[InlineKeyboardButton]] = []
+        pop = getattr(artist, "popular_tracks", None)
+        if pop:
+            lines.append("\n<b>\ud83d\udd25 Популярные треки:</b>")
+            for i, t in enumerate(pop[:5], 1):
+                lines.append(_track_line(i, t))
+                if t.available:
+                    buttons.append(
+                        [InlineKeyboardButton(f"\u2b07 {t.title[:35]}", callback_data=f"ym_dl:{t.id}")]
+                    )
+
+        text = "\n".join(lines)
+        if len(text) > 4000:
+            text = text[:3900] + "\n\n<i>\u2026обрезано</i>"
+
+        kw = dict(text=text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+        if buttons:
+            kw["reply_markup"] = InlineKeyboardMarkup(buttons)
+
+        try:
+            await message.edit_text(**kw)
+        except Exception:
+            await message.reply(**kw)
+
+    except ValueError as e:
+        try:
+            await message.edit_text(f"\u274c {e}")
+        except Exception:
+            pass
+    except Exception as e:
+        log.error("artist error: %s", e, exc_info=True)
+        try:
+            await message.edit_text(f"\u274c Ошибка: {e}")
+        except Exception:
+            pass
+
+
+async def _cmd_album(client, message) -> None:
+    """Search album and show track list."""
+    from pyrogram.enums import ParseMode
+    from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+    parts = message.text.split(maxsplit=2)
+    if len(parts) < 3:
+        try:
+            await message.edit_text(
+                "\u274c Использование: <code>.ya b запрос</code>",
+                parse_mode=ParseMode.HTML,
+            )
+        except Exception:
+            pass
+        return
+
+    query = parts[2]
+    try:
+        await message.edit_text("\ud83d\udcbf Ищу альбом\u2026")
+        ym = _get_client()
+        result = await _run_sync(ym.search, query, "album")
+
+        if not result or not result.albums or not result.albums.results:
+            try:
+                await message.edit_text("\u274c Альбом не найден")
+            except Exception:
+                pass
+            return
+
+        album_id = result.albums.results[0].id
+        album = await _run_sync(ym.albums_with_tracks, album_id)
+        if not album:
+            try:
+                await message.edit_text("\u274c Не удалось загрузить альбом")
+            except Exception:
+                pass
+            return
+
+        artists = ", ".join(a.name for a in album.artists) if album.artists else ""
+        header = f"\ud83d\udcbf <b>{album.title}</b>\n\ud83c\udfa4 {artists}"
+        if album.year:
+            header += f" ({album.year})"
+        if album.genre:
+            header += f"\n\ud83c\udfb5 {album.genre}"
+        if album.track_count:
+            header += f"\n\ud83c\udfb5 Треков: {album.track_count}"
+
+        lines = [header, ""]
+        buttons: list[list[InlineKeyboardButton]] = []
+        for vol_idx, volume in enumerate(album.volumes, 1):
+            if len(album.volumes) > 1:
+                lines.append(f"<b>Диск {vol_idx}:</b>")
+            for i, track in enumerate(volume, 1):
+                lines.append(_track_line(i, track))
+                if track.available:
+                    buttons.append(
+                        [InlineKeyboardButton(f"\u2b07 {track.title[:35]}", callback_data=f"ym_dl:{track.id}")]
+                    )
+
+        text = "\n".join(lines)
+        if len(text) > 4000:
+            text = text[:3900] + "\n\n<i>\u2026обрезано</i>"
+
+        kw = dict(text=text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+        if buttons:
+            kw["reply_markup"] = InlineKeyboardMarkup(buttons)
+
+        try:
+            await message.edit_text(**kw)
+        except Exception:
+            await message.reply(**kw)
+
+    except ValueError as e:
+        try:
+            await message.edit_text(f"\u274c {e}")
+        except Exception:
+            pass
+    except Exception as e:
+        log.error("album error: %s", e, exc_info=True)
+        try:
+            await message.edit_text(f"\u274c Ошибка: {e}")
+        except Exception:
+            pass
+
+
+async def _cmd_liked(client, message) -> None:
+    """Show user's liked tracks."""
+    from pyrogram.enums import ParseMode
+    from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+    try:
+        await message.edit_text("\u2764\ufe0f Загружаю любимые треки\u2026")
+        ym = _get_client()
+        liked = await _run_sync(ym.users_likes_tracks)
+
+        if not liked or not liked.tracks:
+            try:
+                await message.edit_text("\ud83d\udced Список лайков пуст")
+            except Exception:
+                pass
+            return
+
+        lines = [f"<b>\u2764\ufe0f Любимые треки ({len(liked.tracks)}):</b>\n"]
+        buttons: list[list[InlineKeyboardButton]] = []
+        for i, ts in enumerate(liked.tracks[:15], 1):
+            try:
+                track = await _run_sync(ts.fetch_track)
+                if track:
+                    lines.append(_track_line(i, track))
+                    if track.available:
+                        buttons.append(
+                            [InlineKeyboardButton(
+                                f"\u2b07 {track.title[:35]}",
+                                callback_data=f"ym_dl:{track.id}",
+                            )]
+                        )
+            except Exception:
+                lines.append(f"<b>{i}.</b> [ошибка загрузки]")
+
+        text = "\n".join(lines)
+        if len(text) > 4000:
+            text = text[:3900] + "\n\n<i>\u2026обрезано</i>"
+
+        kw = dict(text=text, parse_mode=ParseMode.HTML)
+        if buttons:
+            kw["reply_markup"] = InlineKeyboardMarkup(buttons)
+
+        try:
+            await message.edit_text(**kw)
+        except Exception:
+            await message.reply(**kw)
+
+    except ValueError as e:
+        try:
+            await message.edit_text(f"\u274c {e}")
+        except Exception:
+            pass
+    except Exception as e:
+        log.error("liked error: %s", e, exc_info=True)
+        try:
+            await message.edit_text(f"\u274c Ошибка: {e}")
+        except Exception:
+            pass
+
+
+async def _cmd_chart(client, message) -> None:
+    """Show Yandex Music chart (top tracks)."""
+    from pyrogram.enums import ParseMode
+    from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+    try:
+        await message.edit_text("\ud83d\udcca Загружаю чарт\u2026")
+        ym = _get_client()
+        landing = await _run_sync(ym.landing, ["chart"])
+
+        if not landing or not landing.blocks:
+            try:
+                await message.edit_text("\u274c Не удалось загрузить чарт")
+            except Exception:
+                pass
+            return
+
+        # find the chart block
+        chart_block = None
+        for block in landing.blocks:
+            bid = getattr(block, "block_id", None)
+            if bid == "chart":
+                chart_block = block
+                break
+
+        if not chart_block:
+            try:
+                await message.edit_text("\u274c Чарт не найден")
+            except Exception:
+                pass
+            return
+
+        items = getattr(chart_block, "entities", None) or []
+        lines = ["<b>\ud83d\udcca Яндекс Музыка Чарт</b>\n"]
+        buttons: list[list[InlineKeyboardButton]] = []
+        for i, item in enumerate(items[:15], 1):
+            track = None
+            if hasattr(item, "track") and item.track:
+                track = item.track
+            elif hasattr(item, "fetch_track"):
+                try:
+                    track = await _run_sync(item.fetch_track)
+                except Exception:
+                    continue
+            if not track:
+                continue
+            lines.append(_track_line(i, track))
+            if track.available:
+                buttons.append(
+                    [InlineKeyboardButton(f"\u2b07 {i}. {track.title[:30]}", callback_data=f"ym_dl:{track.id}")]
+                )
+
+        if not lines or len(lines) == 1:
+            try:
+                await message.edit_text("\u274c Чарт пуст")
+            except Exception:
+                pass
+            return
+
+        text = "\n".join(lines)
+        if len(text) > 4000:
+            text = text[:3900] + "\n\n<i>\u2026обрезано</i>"
+
+        kw = dict(text=text, parse_mode=ParseMode.HTML)
+        if buttons:
+            kw["reply_markup"] = InlineKeyboardMarkup(buttons)
+
+        try:
+            await message.edit_text(**kw)
+        except Exception:
+            await message.reply(**kw)
+
+    except ValueError as e:
+        try:
+            await message.edit_text(f"\u274c {e}")
+        except Exception:
+            pass
+    except Exception as e:
+        log.error("chart error: %s", e, exc_info=True)
+        try:
+            await message.edit_text(f"\u274c Ошибка: {e}")
+        except Exception:
+            pass
+
+
+async def _cmd_token(message) -> None:
+    """Set (or update) the Yandex Music OAuth token."""
+    from pyrogram.enums import ParseMode
+
+    parts = message.text.split(maxsplit=2)
+    if len(parts) < 3:
+        try:
+            await message.edit_text(
+                "\u274c Использование: <code>.ya token YOUR_TOKEN</code>\n\n"
+                '<i>Получить токен: </i>'
+                '<a href="https://oauth.yandex.ru/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d">'
+                "OAuth авторизация</a>",
+                parse_mode=ParseMode.HTML,
+                disable_web_page_preview=True,
+            )
+        except Exception:
+            pass
+        return
+
+    token = parts[2].strip()
+    try:
+        _reset_client()
+        _save_token(token)
+        ym = _get_client()
+        login = ym.me.account.login
+        try:
+            await message.edit_text(
+                f"\u2705 Токен установлен!\n\ud83d\udc64 Аккаунт: <b>{login}</b>",
+                parse_mode=ParseMode.HTML,
+            )
+        except Exception:
+            pass
+    except Exception as e:
+        _reset_client()
+        log.error("token error: %s", e, exc_info=True)
+        try:
+            await message.edit_text(f"\u274c Неверный токен: {e}", parse_mode=ParseMode.HTML)
+        except Exception:
+            pass
+
+
+# ───────────────────── main dispatcher ─────────────────────
+
+def register(client):
+    """Called by the loader with the Pyrofork Client. Register handlers."""
+    import logging
+    from pyrogram import filters
+    from pyrogram.handlers import MessageHandler, CallbackQueryHandler
+    from pyrogram.types import Message
+    from scripts._utils import safe_edit
+
+    log = logging.getLogger("sandusr.scripts.yandex_music")
+
+    async def _dispatcher(client, message: Message):
+        """Single entry point: .ya [sub-command] [args...]"""
+        parts = message.text.split()
+        sub = parts[1] if len(parts) > 1 else ""
+
+        try:
+            if sub in ("s", "search"):
+                await _cmd_search(client, message)
+            elif sub in ("d", "dl", "download"):
+                await _cmd_download(client, message)
+            elif sub in ("l", "lyrics", "lyric"):
+                await _cmd_lyrics(message)
+            elif sub in ("a", "artist"):
+                await _cmd_artist(client, message)
+            elif sub in ("b", "album"):
+                await _cmd_album(client, message)
+            elif sub in ("liked", "likes", "like"):
+                await _cmd_liked(client, message)
+            elif sub in ("chart", "top"):
+                await _cmd_chart(client, message)
+            elif sub == "token":
+                await _cmd_token(message)
+            else:
+                await _cmd_help(message)
+        except Exception as e:
+            log.error("unhandled error: %s", e, exc_info=True)
+            await safe_edit(message, f"\u274c Неожиданная ошибка: {e}")
+
+    async def _on_callback(client, callback_query):
+        """Handle inline button presses (ym_dl:track_id)."""
+        data = callback_query.data
+        if not data or not data.startswith("ym_dl:"):
+            return
+
+        track_id = data.split(":", 1)[1]
+        try:
+            ym = _get_client()
+            tracks = await _run_sync(ym.tracks, track_id)
+            if not tracks:
+                await callback_query.answer("\u274c Трек не найден", show_alert=True)
+                return
+            await _download_send_callback(client, callback_query, tracks[0])
+        except ValueError as e:
+            await callback_query.answer(str(e), show_alert=True)
+        except Exception as e:
+            log.error("callback error: %s", e, exc_info=True)
+            await callback_query.answer(f"\u274c {e}", show_alert=True)
+
+    client.add_handler(MessageHandler(
+        _dispatcher,
+        filters.command("ya", prefixes=".") & filters.me,
+    ))
+
+    client.add_handler(CallbackQueryHandler(
+        _on_callback,
+        filters.regex(r"^ym_dl:"),
+    ))
+
+
+def on_load():
+    token = _get_token()
+    if token:
+        print(f"[yandex_music] Loaded (token: {'*' * 8}...{token[-4:]})")
+    else:
+        print("[yandex_music] Loaded (токен не установлен)")
+
+
+def on_unload():
+    _reset_client()
+    print("[yandex_music] Unloaded")

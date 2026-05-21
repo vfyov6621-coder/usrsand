@@ -1,0 +1,7 @@
+{
+    "name": "yandex_music",
+    "version": "1.0.0",
+    "description": "Яндекс Музыка — поиск, скачивание треков, тексты, чарт, лайки",
+    "commands": [".ya", ".ya s", ".ya d", ".ya l", ".ya a", ".ya b", ".ya liked", ".ya chart", ".ya token"],
+    "author": "sandusr"
+}
