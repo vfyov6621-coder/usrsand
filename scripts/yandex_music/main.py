@@ -796,61 +796,80 @@ async def _generate_now_cover(cover_uri: str) -> str | None:
         return None
 
 
+async def _fetch_now_playing():
+    """Fetch currently playing track. Returns (track, context_type) or (None, None).
+
+    Tries queues API first, falls back to landing.
+    """
+    ym = _get_client()
+
+    # ── Method 1: queues API (yandex-music >= 2.0) ──
+    if hasattr(ym, "queues"):
+        try:
+            queues = ym.queues()
+            if queues:
+                q = queues[0]
+                qid = getattr(q, "id", None)
+                if qid:
+                    queue_tracks = ym.queues_items(qid)
+                    items = getattr(queue_tracks, "tracks", None) or getattr(queue_tracks, "items", None) or []
+                    if items:
+                        first = items[0]
+                        track_id = getattr(first, "track_id", None)
+                        if track_id:
+                            tracks = ym.tracks(str(track_id))
+                            if tracks:
+                                ctx = getattr(q, "context", None)
+                                ctx_type = getattr(ctx, "type", None) if ctx else None
+                                return tracks[0], ctx_type
+        except Exception as e:
+            log.debug("queues API failed: %s", e)
+
+    # ── Method 2: landing "personal-recommendations" or "recent" ──
+    try:
+        landing = ym.landing(["personal-recommendations"])
+        if landing and landing.blocks:
+            for block in landing.blocks:
+                bid = getattr(block, "block_id", "")
+                if "recent" in bid.lower() or "personal" in bid.lower() or "history" in bid.lower():
+                    entities = getattr(block, "entities", None) or []
+                    for ent in entities:
+                        track = getattr(ent, "track", None)
+                        if track:
+                            return track, "recent"
+                        if hasattr(ent, "fetch_track"):
+                            track = ent.fetch_track()
+                            if track:
+                                return track, "recent"
+    except Exception as e:
+        log.debug("landing fallback failed: %s", e)
+
+    return None, None
+
+
 async def _cmd_now(client, message) -> None:
-    """Show currently playing track from Yandex Music queues with cover card."""
+    """Show currently playing track from Yandex Music with cover card."""
     from pyrogram.enums import ParseMode
 
     try:
         await message.edit_text("🎧 Определяю…")
-        ym = _get_client()
-        queues = await _run_sync(ym.queues)
 
-        if not queues:
-            try:
-                await message.edit_text("📭 Нет активных очередей")
-            except Exception:
-                pass
-            return
-
-        # use the first (current) queue
-        q = queues[0]
-        qid = getattr(q, "id", None)
-        if not qid:
-            try:
-                await message.edit_text("📭 Очередь не найдена")
-            except Exception:
-                pass
-            return
-
-        queue_tracks = await _run_sync(ym.queues_items, qid)
-        if not queue_tracks:
-            try:
-                await message.edit_text("📭 Очередь пуста")
-            except Exception:
-                pass
-            return
-
-        items = getattr(queue_tracks, "tracks", None) or getattr(queue_tracks, "items", None) or []
-        if not items:
-            try:
-                await message.edit_text("📭 Очередь пуста")
-            except Exception:
-                pass
-            return
-
-        track = None
-        first = items[0]
-        track_id = getattr(first, "track_id", None)
-        if track_id:
-            tracks = await _run_sync(ym.tracks, str(track_id))
-            if tracks:
-                track = tracks[0]
+        track, ctx_type = await _run_sync(_fetch_now_playing)
 
         if not track:
+            ym_ver = "?.?"
             try:
-                await message.edit_text("📭 Не удалось определить трек")
+                import yandex_music
+                ym_ver = getattr(yandex_music, "__version__", "?")
             except Exception:
                 pass
+            await message.edit_text(
+                f"📭 Не удалось определить играющий трек\n\n"
+                f"<i>Убедись что музыка играет в Яндекс Музыке "
+                f"(веб/приложение/десктоп)</i>\n"
+                f"<i>Версия yandex-music: {ym_ver}</i>",
+                parse_mode=ParseMode.HTML,
+            )
             return
 
         artists = ", ".join(a.name for a in track.artists) if track.artists else ""
@@ -883,7 +902,6 @@ async def _cmd_now(client, message) -> None:
                 )
                 await message.delete()
             except Exception:
-                # fallback without photo
                 try:
                     await message.edit_text(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
                 except Exception:
