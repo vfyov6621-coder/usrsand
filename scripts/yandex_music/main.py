@@ -231,6 +231,7 @@ async def _cmd_help(message) -> None:
         "<code>.ya b</code> <i>запрос</i> \u2014 поиск альбома\n"
         "<code>.ya liked</code> \u2014 любимые треки\n"
         "<code>.ya chart</code> \u2014 чарт\n"
+        "<code>.ya now</code> \u2014 что сейчас играет\n"
         "<code>.ya token</code> <i>токен</i> \u2014 установить токен\n\n"
         "<i>Получить токен: </i>"
         '<a href="https://oauth.yandex.ru/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d">'
@@ -746,6 +747,105 @@ async def _cmd_chart(client, message) -> None:
             pass
 
 
+async def _cmd_now(client, message) -> None:
+    """Show currently playing track from Yandex Music queues."""
+    from pyrogram.enums import ParseMode
+
+    try:
+        await message.edit_text("🎧 Определяю…")
+        ym = _get_client()
+        queues = await _run_sync(ym.queues)
+
+        if not queues:
+            try:
+                await message.edit_text("📭 Нет активных очередей")
+            except Exception:
+                pass
+            return
+
+        # use the first (current) queue
+        q = queues[0]
+        qid = getattr(q, "id", None)
+        if not qid:
+            try:
+                await message.edit_text("📭 Очередь не найдена")
+            except Exception:
+                pass
+            return
+
+        queue_tracks = await _run_sync(ym.queues_items, qid)
+        if not queue_tracks:
+            try:
+                await message.edit_text("📭 Очередь пуста")
+            except Exception:
+                pass
+            return
+
+        items = getattr(queue_tracks, "tracks", None) or getattr(queue_tracks, "items", None) or []
+        if not items:
+            try:
+                await message.edit_text("📭 Очередь пуста")
+            except Exception:
+                pass
+            return
+
+        track = None
+        progress = None
+        total = None
+
+        first = items[0]
+        track_id = getattr(first, "track_id", None)
+        if track_id:
+            # .track_id can be "id:album_id"
+            tracks = await _run_sync(ym.tracks, str(track_id))
+            if tracks:
+                track = tracks[0]
+
+        # try to get progress / total from queue context
+        current_index = getattr(q, "current_index", None)
+        ctx = getattr(q, "context", None)
+        ctx_type = getattr(ctx, "type", None) if ctx else None
+
+        if not track:
+            try:
+                await message.edit_text("📭 Не удалось определить трек")
+            except Exception:
+                pass
+            return
+
+        artists = ", ".join(a.name for a in track.artists) if track.artists else ""
+        dur = _fmt_dur(getattr(track, "duration_ms", None))
+        album = track.albums[0].title if track.albums else ""
+
+        lines = ["☞ <b>Сейчас играет:</b>", ""]
+        lines.append(f"🎵 <b>{track.title}</b>")
+        lines.append(f"🎤 {artists}")
+        if album:
+            lines.append(f"💿 {album}")
+        lines.append(f"⏱ {dur}")
+
+        if ctx_type:
+            lines.append(f"📜 {ctx_type}")
+
+        text = "\n".join(lines)
+        try:
+            await message.edit_text(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+        except Exception:
+            await message.reply(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+
+    except ValueError as e:
+        try:
+            await message.edit_text(f"\u274c {e}")
+        except Exception:
+            pass
+    except Exception as e:
+        log.error("now error: %s", e, exc_info=True)
+        try:
+            await message.edit_text(f"\u274c Ошибка: {e}")
+        except Exception:
+            pass
+
+
 async def _cmd_token(message) -> None:
     """Set (or update) the Yandex Music OAuth token."""
     from pyrogram.enums import ParseMode
@@ -819,6 +919,8 @@ def register(client):
                 await _cmd_liked(client, message)
             elif sub in ("chart", "top"):
                 await _cmd_chart(client, message)
+            elif sub in ("now", "np", "playing"):
+                await _cmd_now(client, message)
             elif sub == "token":
                 await _cmd_token(message)
             else:
