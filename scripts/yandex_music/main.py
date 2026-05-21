@@ -799,50 +799,103 @@ async def _generate_now_cover(cover_uri: str) -> str | None:
 def _fetch_now_playing():
     """Fetch currently playing track. Returns (track, context_type) or (None, None).
 
-    Tries queues API first, falls back to landing.
+    Tries multiple methods to detect playing track.
     """
     ym = _get_client()
 
-    # ── Method 1: queues API (yandex-music >= 2.0) ──
+    # ── Method 1: queues API ──
     if hasattr(ym, "queues"):
         try:
             queues = ym.queues()
+            log.debug("queues() returned: %s", type(queues))
             if queues:
                 q = queues[0]
+                log.debug("first queue id=%s type=%s", getattr(q, "id", "?"), type(q).__name__)
                 qid = getattr(q, "id", None)
                 if qid:
                     queue_tracks = ym.queues_items(qid)
-                    items = getattr(queue_tracks, "tracks", None) or getattr(queue_tracks, "items", None) or []
+                    items = (getattr(queue_tracks, "tracks", None)
+                             or getattr(queue_tracks, "items", None)
+                             or [])
+                    log.debug("queue items count: %s", len(items))
                     if items:
                         first = items[0]
                         track_id = getattr(first, "track_id", None)
+                        log.debug("first item track_id=%s", track_id)
                         if track_id:
                             tracks = ym.tracks(str(track_id))
                             if tracks:
                                 ctx = getattr(q, "context", None)
                                 ctx_type = getattr(ctx, "type", None) if ctx else None
                                 return tracks[0], ctx_type
+            else:
+                log.debug("queues() returned empty/falsy")
         except Exception as e:
-            log.debug("queues API failed: %s", e)
+            log.warning("queues API failed: %s", e)
 
-    # ── Method 2: landing "personal-recommendations" or "recent" ──
-    try:
-        landing = ym.landing(["personal-recommendations"])
-        if landing and landing.blocks:
-            for block in landing.blocks:
-                bid = getattr(block, "block_id", "")
-                if "recent" in bid.lower() or "personal" in bid.lower() or "history" in bid.lower():
+    # ── Method 2: player_state / player ──
+    for method_name in ("player_state", "player"):
+        if hasattr(ym, method_name):
+            try:
+                result = getattr(ym, method_name)()
+                log.debug("%s() returned: %s", method_name, type(result))
+                if result:
+                    track = getattr(result, "track", None)
+                    if not track and hasattr(result, "tracks"):
+                        tracks_list = result.tracks
+                        if tracks_list:
+                            track = tracks_list[0]
+                    if track:
+                        return track, method_name
+            except Exception as e:
+                log.debug("%s failed: %s", method_name, e)
+
+    # ── Method 3: landing blocks ──
+    for block_ids in [
+        ["recent"],
+        ["personal-recommendations"],
+        ["podcasts", "new-releases", "recent"],
+    ]:
+        try:
+            landing = ym.landing(block_ids)
+            if landing and landing.blocks:
+                for block in landing.blocks:
+                    bid = str(getattr(block, "block_id", ""))
+                    log.debug("landing block: %s", bid)
                     entities = getattr(block, "entities", None) or []
                     for ent in entities:
                         track = getattr(ent, "track", None)
+                        if not track:
+                            # try to fetch from TrackShort
+                            if hasattr(ent, "fetch_track"):
+                                try:
+                                    track = ent.fetch_track()
+                                except Exception:
+                                    pass
                         if track:
-                            return track, "recent"
-                        if hasattr(ent, "fetch_track"):
-                            track = ent.fetch_track()
-                            if track:
-                                return track, "recent"
-    except Exception as e:
-        log.debug("landing fallback failed: %s", e)
+                            return track, bid
+        except Exception as e:
+            log.debug("landing(%s) failed: %s", block_ids, e)
+
+    # ── Method 4: last played from feed ──
+    if hasattr(ym, "feed"):
+        try:
+            feed = ym.feed()
+            if feed:
+                gen = getattr(feed, "generated", None) or []
+                for g in (gen[:3] if gen else []):
+                    tracks_data = getattr(g, "tracks", None) or []
+                    for td in tracks_data:
+                        track = getattr(td, "track", None)
+                        if not track and hasattr(td, "fetch_track"):
+                            try:
+                                track = td.fetch_track()
+                            except Exception:
+                                pass
+                        if track:
+                            return track, "feed"
+        except Exception as e:
+            log.debug("feed failed: %s", e)
 
     return None, None
 
@@ -863,11 +916,21 @@ async def _cmd_now(client, message) -> None:
                 ym_ver = getattr(yandex_music, "__version__", "?")
             except Exception:
                 pass
+
+            # collect available API methods for diagnostics
+            available = []
+            for m in ("queues", "queues_items", "player_state", "player", "feed", "landing"):
+                if hasattr(ym, m):
+                    available.append(m)
+
             await message.edit_text(
                 f"📭 Не удалось определить играющий трек\n\n"
-                f"<i>Убедись что музыка играет в Яндекс Музыке "
-                f"(веб/приложение/десктоп)</i>\n"
-                f"<i>Версия yandex-music: {ym_ver}</i>",
+                f"<i>Возможные причины:</i>\n"
+                f"• Музыка играет в браузере — очередь не синхронизируется\n"
+                f"  (нужен десктоп/мобильный клиент ЯМ)\n"
+                f"• Нет активной очереди воспроизведения\n\n"
+                f"<i>Версия yandex-music: {ym_ver}</i>\n"
+                f"<i>Доступные методы: {', '.join(available)}</i>",
                 parse_mode=ParseMode.HTML,
             )
             return
