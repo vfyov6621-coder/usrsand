@@ -9,6 +9,7 @@ import asyncio
 import logging
 import threading
 import traceback
+import importlib
 
 # ═══════════════════════════════════════════════════════════════════════
 #  Connection fixes — MUST be before any imports that use network
@@ -51,6 +52,7 @@ VERSION = Config.VERSION
 BOT_NAME = "sandusr"
 _loaded_scripts = []
 PHOTO_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot_photo.jpg")
+MAX_CONNECT_ATTEMPTS = 5
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -60,6 +62,22 @@ PHOTO_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot_photo
 def _check_network():
     """Pre-flight network check. Returns list of issues."""
     issues = []
+
+    # Check python-socks if proxy configured
+    if Config.PROXY:
+        try:
+            import socksio  # noqa: F401
+            logger.info("python-socks (socksio): installed")
+        except ImportError:
+            try:
+                import python_socks  # noqa: F401
+                logger.info("python-socks: installed")
+            except ImportError:
+                issues.append(
+                    "PROXY set in .env but python-socks NOT installed! "
+                    "Proxy will be IGNORED. Run: pip install python-socks[asyncio]"
+                )
+                logger.warning("PROXY is set but python-socks NOT installed!")
 
     # Test DNS resolution
     for host in ["api.telegram.org", "149.154.167.50"]:
@@ -83,7 +101,7 @@ def _check_network():
     for ip, port in [("149.154.167.50", 443), ("149.154.175.50", 443)]:
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(10)
+            sock.settimeout(5)
             sock.connect((ip, port))
             sock.close()
             logger.info(f"TCP OK: {ip}:{port}")
@@ -96,16 +114,16 @@ def _check_network():
         except Exception as e:
             issues.append(f"TCP error to {ip}:{port}: {e}")
 
-    # Check proxy if configured
+    # Check proxy TCP if configured
     if Config.PROXY:
         proxy_host = Config.PROXY.get("hostname", "?")
         proxy_port = Config.PROXY.get("port", "?")
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(10)
+            sock.settimeout(5)
             sock.connect((proxy_host, proxy_port))
             sock.close()
-            logger.info(f"Proxy OK: {proxy_host}:{proxy_port}")
+            logger.info(f"Proxy TCP OK: {proxy_host}:{proxy_port}")
         except Exception as e:
             issues.append(f"Proxy unreachable {proxy_host}:{proxy_port}: {e}")
 
@@ -113,23 +131,53 @@ def _check_network():
 
 
 # ═══════════════════════════════════════════════════════════════════════
-#  Patch Pyrogram connection timeout
+#  Patch Pyrogram/Pyrofork connection timeout
 # ═══════════════════════════════════════════════════════════════════════
 
 def _patch_pyrogram_timeout():
-    """Increase Pyrogram's default connection timeout from 10s to 30s."""
+    """Brute-force patch ALL timeout constants in pyrogram connection modules."""
+    patched = False
+    timeout_val = 30
+
+    targets = [
+        ("pyrogram.connection.connection", ["CONNECTION_TIMEOUT", "CONNECT_TIMEOUT", "timeout"]),
+        ("pyrogram.connection.tcp.tcp", ["CONNECTION_TIMEOUT", "CONNECT_TIMEOUT", "timeout"]),
+        ("pyrogram.connection.tcp.abridged", ["CONNECTION_TIMEOUT", "CONNECT_TIMEOUT"]),
+        ("pyrogram.connection.tcp.full", ["CONNECTION_TIMEOUT", "CONNECT_TIMEOUT"]),
+        ("pyrogram.connection.tcp.intermediate", ["CONNECTION_TIMEOUT", "CONNECT_TIMEOUT"]),
+        ("pyrogram.connection.tcp.obfuscated2", ["CONNECTION_TIMEOUT", "CONNECT_TIMEOUT"]),
+    ]
+
+    for mod_path, attrs in targets:
+        try:
+            mod = importlib.import_module(mod_path)
+            for attr in attrs:
+                if hasattr(mod, attr):
+                    old_val = getattr(mod, attr)
+                    if isinstance(old_val, (int, float)) and old_val < timeout_val:
+                        setattr(mod, attr, timeout_val)
+                        logger.info(f"Patched {mod_path}.{attr}: {old_val}s -> {timeout_val}s")
+                        patched = True
+        except ImportError:
+            pass
+        except Exception as e:
+            logger.debug(f"Patch {mod_path}: {e}")
+
+    # Also try on Connection class directly
     try:
         from pyrogram.connection.connection import Connection
-        Connection.CONNECTION_TIMEOUT = 30
-        logger.info("Pyrogram connection timeout patched: 10s -> 30s")
+        for attr in ["CONNECTION_TIMEOUT", "CONNECT_TIMEOUT", "timeout"]:
+            if hasattr(Connection, attr):
+                old_val = getattr(Connection, attr)
+                if isinstance(old_val, (int, float)) and old_val < timeout_val:
+                    setattr(Connection, attr, timeout_val)
+                    logger.info(f"Patched Connection.{attr}: {old_val}s -> {timeout_val}s")
+                    patched = True
     except Exception:
-        try:
-            # Pyrofork may have different structure
-            import pyrogram.connection.tcp.tcp
-            pyrogram.connection.tcp.tcp.Connection.CONNECT_TIMEOUT = 30
-            logger.info("Pyrofork TCP connect timeout patched: 30s")
-        except Exception:
-            logger.debug("Could not patch Pyrogram timeout (not critical)")
+        pass
+
+    if not patched:
+        logger.warning("Could not patch Pyrogram timeout — using default")
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -145,7 +193,6 @@ MM_KEYBOARD = InlineKeyboardMarkup([
 
 async def mm_cmd(client, message: Message):
     text = f"🤖 <b>{BOT_NAME}</b> v{VERSION}\n\nВыберите действие:"
-    # Try with photo if exists
     if os.path.exists(PHOTO_FILE):
         try:
             await message.edit_text(text, reply_markup=MM_KEYBOARD, parse_mode=ParseMode.HTML)
@@ -269,7 +316,6 @@ async def lm_cmd(client, message: Message):
 
 
 async def _lm_list(message: Message):
-    """Show list of scripts (loaded + available)."""
     available = get_available()
     loaded = get_loaded_names()
 
@@ -294,7 +340,6 @@ async def _lm_list(message: Message):
 
 
 async def _lm_load(client, message: Message, script_id: str):
-    """Load a script."""
     result = load_script(script_id, client)
     if result["success"]:
         addons = result.get("addons", [])
@@ -311,7 +356,6 @@ async def _lm_load(client, message: Message, script_id: str):
 
 
 async def _lm_unload(message: Message, script_id: str):
-    """Unload a script."""
     result = unload_script(script_id)
     if result["success"]:
         await safe_edit(message, f"✅ Скрипт <code>{script_id}</code> выгружен", parse_mode=ParseMode.HTML)
@@ -324,8 +368,7 @@ async def _lm_unload(message: Message, script_id: str):
 
 
 async def _lm_reload(client, message: Message, script_id: str):
-    """Reload a script (unload + load)."""
-    unload_script(script_id)  # ignore errors (may not be loaded)
+    unload_script(script_id)
     result = load_script(script_id, client)
     if result["success"]:
         addons = result.get("addons", [])
@@ -343,7 +386,6 @@ async def _lm_reload(client, message: Message, script_id: str):
 
 
 async def _lm_info(message: Message, script_id: str):
-    """Show info about a script."""
     info = get_script_info(script_id)
     if info is None:
         await safe_edit(message, f"❌ Скрипт <code>{script_id}</code> не найден", parse_mode=ParseMode.HTML)
@@ -407,24 +449,39 @@ async def main():
     # Patch timeout
     _patch_pyrogram_timeout()
 
-    # Proxy info
+    # Proxy check
     if Config.PROXY:
         p = Config.PROXY
         logger.info(f"Using proxy: {p['scheme']}://{p['hostname']}:{p['port']}")
         add_log(f"Proxy: {p['scheme']}://{p['hostname']}:{p['port']}")
+        # Verify python-socks is installed
+        try:
+            import socksio  # noqa: F401
+        except ImportError:
+            try:
+                import python_socks  # noqa: F401
+            except ImportError:
+                logger.error(
+                    "PROXY is set but python-socks NOT installed!\n"
+                    "Proxy will be IGNORED by Pyrogram.\n"
+                    "Run: pip install python-socks[asyncio]"
+                )
+                add_log("ERROR: proxy set but python-socks not installed!", "ERROR")
+                add_log("FIX: pip install python-socks[asyncio]", "ERROR")
+                return
+    else:
+        logger.info("No proxy configured. If Telegram is blocked, set PROXY in .env")
 
-    # Build client kwargs
-    client_kwargs = {
-        "name": "userbot_session",
-        "api_id": Config.API_ID,
-        "api_hash": Config.API_HASH,
-        "phone_number": Config.PHONE or None,
-        "session_string": Config.SESSION_STRING or None,
-        "workdir": Config.BASE_DIR,
-        "proxy": Config.PROXY or None,
-    }
-
-    client = Client(**client_kwargs)
+    # Build client
+    client = Client(
+        name="userbot_session",
+        api_id=Config.API_ID,
+        api_hash=Config.API_HASH,
+        phone_number=Config.PHONE or None,
+        session_string=Config.SESSION_STRING or None,
+        workdir=Config.BASE_DIR,
+        proxy=Config.PROXY or None,
+    )
 
     # Register built-in commands
     client.add_handler(MessageHandler(mm_cmd, filters.command("mm", prefixes=".") & filters.me))
@@ -438,36 +495,69 @@ async def main():
     add_log(f"Loaded {len(_loaded_scripts)} scripts: {', '.join(_loaded_scripts)}")
     logger.info(f"Loaded {len(_loaded_scripts)} scripts: {', '.join(_loaded_scripts)}")
 
-    try:
-        async with client:
-            me = await client.get_me()
-            account = f"@{me.username}" if me.username else me.first_name
-            set_bot_status("online", account)
-            add_log(f"Started as {account} (ID: {me.id})")
-            logger.info(f"Started as {account} (ID: {me.id})")
-            await idle()
-    except Exception as e:
-        err_str = str(e)
-        logger.error(f"Bot error: {err_str}")
-        add_log(f"Bot error: {err_str}", "ERROR")
+    # ═══ Connect with retry limit ═══
+    attempt = 0
+    while attempt < MAX_CONNECT_ATTEMPTS:
+        attempt += 1
+        logger.info(f"Connection attempt {attempt}/{MAX_CONNECT_ATTEMPTS}...")
+        add_log(f"Connect attempt {attempt}/{MAX_CONNECT_ATTEMPTS}")
+        try:
+            async with client:
+                me = await client.get_me()
+                account = f"@{me.username}" if me.username else me.first_name
+                set_bot_status("online", account)
+                add_log(f"Started as {account} (ID: {me.id})")
+                logger.info(f"Started as {account} (ID: {me.id})")
+                await idle()
+                return
+        except Exception as e:
+            err_str = str(e)
+            logger.error(f"Attempt {attempt} failed: {err_str}")
+            add_log(f"Connect attempt {attempt} failed: {err_str[:100]}", "ERROR")
 
-        # Helpful error messages
-        if "timed out" in err_str.lower() or "timeout" in err_str.lower():
-            tip = (
-                "CONNECTION TIP: Telegram is unreachable!\n"
-                "Options:\n"
-                "  1) Use a VPN that works with Telegram\n"
-                "  2) Set PROXY in .env: PROXY=socks5://host:port\n"
-                "  3) pip install python-socks[asyncio] (for SOCKS5 proxy)\n"
-                "  4) Set FORCE_IPV4=0 in .env if you need IPv6"
-            )
-            logger.error(tip)
-            add_log(tip, "ERROR")
-        elif "api id" in err_str.lower() or "api_hash" in err_str.lower():
-            add_log("FIX: Check API_ID and API_HASH in .env", "ERROR")
-    finally:
-        set_bot_status("offline")
-        add_log("Bot stopped")
+            if "timed out" in err_str.lower() or "timeout" in err_str.lower():
+                if attempt < MAX_CONNECT_ATTEMPTS:
+                    logger.info(f"Timeout. Retrying in 5s... ({attempt}/{MAX_CONNECT_ATTEMPTS})")
+                    add_log(f"Timeout, retrying in 5s ({attempt}/{MAX_CONNECT_ATTEMPTS})")
+                    await asyncio.sleep(5)
+                    continue
+
+            # Non-timeout error — don't retry
+            if "api id" in err_str.lower() or "api_hash" in err_str.lower():
+                add_log("FIX: Check API_ID and API_HASH in .env", "ERROR")
+                return
+            if "flood" in err_str.lower():
+                add_log("FIX: Flood wait. Try again later.", "ERROR")
+                return
+            if "auth" in err_str.lower() or "phone" in err_str.lower() or "session" in err_str.lower():
+                add_log(f"Auth error: {err_str[:200]}", "ERROR")
+                return
+
+            # Unknown error — retry if attempts left
+            if attempt < MAX_CONNECT_ATTEMPTS:
+                logger.info(f"Retrying in 5s... ({attempt}/{MAX_CONNECT_ATTEMPTS})")
+                await asyncio.sleep(5)
+                continue
+
+    # All attempts failed
+    set_bot_status("offline")
+    add_log("Bot stopped — connection failed", "ERROR")
+    logger.error(
+        f"\n{'='*50}\n"
+        f"FAILED after {MAX_CONNECT_ATTEMPTS} attempts.\n"
+        f"{'='*50}\n\n"
+        f"Your VPN is NOT routing to Telegram.\n\n"
+        f"Fix options:\n\n"
+        f"  1) PROXY in .env (recommended):\n"
+        f"     PROXY=socks5://user:pass@host:port\n"
+        f"     pip install python-socks[asyncio]\n\n"
+        f"  2) Use a VPN that works with Telegram\n"
+        f"     (test: can you open web.telegram.org in browser?)\n\n"
+        f"  3) Free SOCKS5 (temporary):\n"
+        f"     PROXY=socks5://host:port\n"
+        f"     https://hidemy.name/en/proxy-list/\n"
+        f"{'='*50}"
+    )
 
 
 if __name__ == "__main__":
@@ -483,8 +573,9 @@ if __name__ == "__main__":
             logger.warning(f"Network issue: {issue}")
             add_log(f"Network issue: {issue}", "WARN")
         logger.warning(
-            "Network issues detected! Telegram may not connect.\n"
-            "Fix: use VPN or set PROXY=socks5://host:port in .env"
+            "Network issues detected! Check warnings above.\n"
+            "If Telegram is blocked, set PROXY=socks5://host:port in .env\n"
+            "And run: pip install python-socks[asyncio]"
         )
     else:
         logger.info("Network diagnostics: all OK")
