@@ -747,8 +747,57 @@ async def _cmd_chart(client, message) -> None:
             pass
 
 
+async def _generate_now_cover(cover_uri: str) -> str | None:
+    """Generate 500x200 now-playing card: blurred bg + sharp centered cover.
+
+    Returns path to the generated image or None on failure.
+    """
+    import urllib.request
+    from PIL import Image, ImageFilter
+
+    try:
+        cover_url = _cover_url(cover_uri, "400x400")
+        tmp_cover = os.path.join(tempfile.gettempdir(), "ym_cover_raw.jpg")
+        tmp_out = os.path.join(tempfile.gettempdir(), "ym_now_card.png")
+
+        urllib.request.urlretrieve(cover_url, tmp_cover)
+        src = Image.open(tmp_cover).convert("RGB")
+
+        # ── blurred background: cover-to-fill 500x200 ──
+        bg = src.copy()
+        bg = bg.resize((500, 200), Image.LANCZOS)
+        bg = bg.filter(ImageFilter.GaussianBlur(25))
+
+        # darken overlay so text pops
+        overlay = Image.new("RGBA", (500, 200), (0, 0, 0, 120))
+        bg_rgba = bg.convert("RGBA")
+        bg_rgba = Image.alpha_composite(bg_rgba, overlay)
+
+        # ── sharp centered cover (140x140) ──
+        thumb = src.copy()
+        thumb = thumb.resize((140, 140), Image.LANCZOS)
+        # rounded corners via mask
+        mask = Image.new("L", (140, 140), 0)
+        from PIL import ImageDraw
+        ImageDraw.Draw(mask).rounded_rectangle([0, 0, 139, 139], radius=12, fill=255)
+        thumb = thumb.convert("RGBA")
+        thumb.putalpha(mask)
+
+        # paste centered (vertically centered: (200-140)/2 = 30)
+        paste_x = (500 - 140) // 2
+        paste_y = (200 - 140) // 2
+        bg_rgba.paste(thumb, (paste_x, paste_y), thumb)
+
+        bg_rgba.convert("RGB").save(tmp_out, "PNG")
+        return tmp_out
+
+    except Exception as e:
+        log.error("generate_now_cover error: %s", e, exc_info=True)
+        return None
+
+
 async def _cmd_now(client, message) -> None:
-    """Show currently playing track from Yandex Music queues."""
+    """Show currently playing track from Yandex Music queues with cover card."""
     from pyrogram.enums import ParseMode
 
     try:
@@ -790,21 +839,12 @@ async def _cmd_now(client, message) -> None:
             return
 
         track = None
-        progress = None
-        total = None
-
         first = items[0]
         track_id = getattr(first, "track_id", None)
         if track_id:
-            # .track_id can be "id:album_id"
             tracks = await _run_sync(ym.tracks, str(track_id))
             if tracks:
                 track = tracks[0]
-
-        # try to get progress / total from queue context
-        current_index = getattr(q, "current_index", None)
-        ctx = getattr(q, "context", None)
-        ctx_type = getattr(ctx, "type", None) if ctx else None
 
         if not track:
             try:
@@ -817,21 +857,42 @@ async def _cmd_now(client, message) -> None:
         dur = _fmt_dur(getattr(track, "duration_ms", None))
         album = track.albums[0].title if track.albums else ""
 
+        cover_uri = getattr(track, "cover_uri", None)
+        cover_path = None
+        if cover_uri:
+            cover_path = await _run_sync(_generate_now_cover, cover_uri)
+
+        # ── build caption ──
         lines = ["☞ <b>Сейчас играет:</b>", ""]
         lines.append(f"🎵 <b>{track.title}</b>")
         lines.append(f"🎤 {artists}")
         if album:
             lines.append(f"💿 {album}")
         lines.append(f"⏱ {dur}")
-
-        if ctx_type:
-            lines.append(f"📜 {ctx_type}")
-
         text = "\n".join(lines)
-        try:
-            await message.edit_text(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
-        except Exception:
-            await message.reply(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+
+        await message.edit_text("📡 Отправляю…")
+
+        if cover_path and os.path.exists(cover_path):
+            try:
+                await client.send_photo(
+                    chat_id=message.chat.id,
+                    photo=cover_path,
+                    caption=text,
+                    parse_mode=ParseMode.HTML,
+                )
+                await message.delete()
+            except Exception:
+                # fallback without photo
+                try:
+                    await message.edit_text(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+                except Exception:
+                    pass
+        else:
+            try:
+                await message.edit_text(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+            except Exception:
+                pass
 
     except ValueError as e:
         try:
