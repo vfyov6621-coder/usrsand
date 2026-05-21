@@ -796,7 +796,7 @@ async def _generate_now_cover(cover_uri: str) -> str | None:
         return None
 
 
-async def _fetch_now_playing():
+def _fetch_now_playing():
     """Fetch currently playing track. Returns (track, context_type) or (None, None).
 
     Tries queues API first, falls back to landing.
