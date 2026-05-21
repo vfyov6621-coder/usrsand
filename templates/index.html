@@ -20,6 +20,7 @@
             --red: #ef4444;
             --yellow: #eab308;
             --blue: #3b82f6;
+            --orange: #f97316;
         }
 
         body {
@@ -107,36 +108,80 @@
         /* ── Scripts ── */
         .script-item {
             display: flex; align-items: center; justify-content: space-between;
-            padding: 12px 0;
+            padding: 14px 0;
             border-bottom: 1px solid var(--border);
         }
         .script-item:last-child { border-bottom: none; }
-        .script-info { display: flex; align-items: center; gap: 12px; }
+        .script-info { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
         .script-icon {
             width: 38px; height: 38px;
             border-radius: 10px;
             display: flex; align-items: center; justify-content: center;
             font-size: 18px;
+            flex-shrink: 0;
         }
         .script-name { font-weight: 600; font-size: 14px; }
-        .script-desc { font-size: 12px; color: var(--text2); margin-top: 2px; }
-        .script-meta { text-align: right; }
-        .script-cmd {
-            font-family: 'Cascadia Code', 'Fira Code', monospace;
-            font-size: 13px; color: var(--accent2);
-            background: rgba(168,85,247,0.1);
-            padding: 3px 10px; border-radius: 6px;
-        }
+        .script-desc { font-size: 12px; color: var(--text2); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .script-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
         .script-tag {
             display: inline-block;
             font-size: 11px;
             padding: 2px 8px;
             border-radius: 4px;
-            margin-top: 4px;
         }
         .tag-loaded { background: rgba(34,197,94,0.15); color: var(--green); }
+        .tag-unloaded { background: rgba(239,68,68,0.15); color: var(--red); }
         .tag-lines { background: rgba(59,130,246,0.15); color: var(--blue); }
         .tag-addon { background: rgba(234,179,8,0.15); color: var(--yellow); }
+
+        /* ── Buttons ── */
+        .btn {
+            padding: 5px 12px;
+            border: 1px solid var(--border);
+            border-radius: 7px;
+            background: var(--bg3);
+            color: var(--text);
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.15s;
+            white-space: nowrap;
+            font-family: inherit;
+        }
+        .btn:hover { background: var(--border); }
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-load { border-color: rgba(34,197,94,0.3); color: var(--green); }
+        .btn-load:hover:not(:disabled) { background: rgba(34,197,94,0.15); }
+        .btn-unload { border-color: rgba(239,68,68,0.3); color: var(--red); }
+        .btn-unload:hover:not(:disabled) { background: rgba(239,68,68,0.15); }
+        .btn-reload { border-color: rgba(249,115,22,0.3); color: var(--orange); }
+        .btn-reload:hover:not(:disabled) { background: rgba(249,115,22,0.15); }
+
+        /* ── Toggle switch ── */
+        .toggle-wrap {
+            display: flex; align-items: center; gap: 6px;
+            cursor: pointer; user-select: none;
+        }
+        .toggle-label { font-size: 10px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.3px; }
+        .toggle {
+            position: relative;
+            width: 32px; height: 18px;
+            background: var(--border);
+            border-radius: 9px;
+            transition: background 0.2s;
+            flex-shrink: 0;
+        }
+        .toggle.active { background: var(--accent); }
+        .toggle::after {
+            content: '';
+            position: absolute;
+            top: 2px; left: 2px;
+            width: 14px; height: 14px;
+            background: #fff;
+            border-radius: 50%;
+            transition: transform 0.2s;
+        }
+        .toggle.active::after { transform: translateX(14px); }
 
         /* ── Logs ── */
         .log-container {
@@ -195,7 +240,28 @@
         .uptime-label { font-size: 12px; color: var(--text2); }
         .uptime-value { font-family: monospace; font-size: 14px; color: var(--green); font-weight: 600; }
 
+        /* ── Toast notification ── */
+        .toast {
+            position: fixed;
+            bottom: 24px; right: 24px;
+            padding: 12px 20px;
+            border-radius: 10px;
+            font-size: 13px;
+            z-index: 9999;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.3s;
+            pointer-events: none;
+        }
+        .toast.show { opacity: 1; transform: translateY(0); }
+        .toast-success { background: rgba(34,197,94,0.9); color: #fff; }
+        .toast-error { background: rgba(239,68,68,0.9); color: #fff; }
+
         /* ── Responsive ── */
+        @media (max-width: 900px) {
+            .script-item { flex-direction: column; align-items: flex-start; gap: 10px; }
+            .script-right { width: 100%; flex-wrap: wrap; }
+        }
         @media (max-width: 768px) {
             .grid { grid-template-columns: 1fr; }
             .stats-grid { grid-template-columns: repeat(2, 1fr); }
@@ -295,6 +361,9 @@
     </div>
 </div>
 
+<!-- Toast -->
+<div id="toast" class="toast"></div>
+
 <script>
 const SCRIPT_ICONS = {
     ping: "&#127891;",
@@ -302,7 +371,12 @@ const SCRIPT_ICONS = {
     weather: "&#127780;",
     translator: "&#127760;",
     ai_chat: "&#129302;",
+    yandex_music: "&#127925;",
 };
+
+// ── Autostart state (fetched once) ──
+let autostartMode = "all";
+let autostartScripts = new Set();
 
 function fmtUptime(s) {
     if (!s) return "---";
@@ -315,6 +389,21 @@ function fmtUptime(s) {
     parts.push(m + "м");
     return parts.join(" ");
 }
+
+function escHtml(s) {
+    const div = document.createElement("div");
+    div.textContent = s;
+    return div.innerHTML;
+}
+
+function showToast(msg, type = "success") {
+    const t = document.getElementById("toast");
+    t.textContent = msg;
+    t.className = "toast toast-" + type + " show";
+    setTimeout(() => { t.className = "toast"; }, 2500);
+}
+
+// ── API calls ──
 
 async function fetchStatus() {
     try {
@@ -343,7 +432,6 @@ async function fetchStatus() {
             document.getElementById("accountName").textContent = d.account;
             document.getElementById("accountDetail").textContent = "Telegram Userbot";
         }
-
     } catch (e) { console.error(e); }
 }
 
@@ -372,6 +460,15 @@ async function fetchLogs() {
     } catch (e) { console.error(e); }
 }
 
+async function fetchAutostart() {
+    try {
+        const r = await fetch("/api/autostart");
+        const d = await r.json();
+        autostartMode = d.mode;
+        autostartScripts = new Set(d.scripts);
+    } catch (e) { console.error(e); }
+}
+
 async function fetchScripts() {
     try {
         const r = await fetch("/api/scripts");
@@ -388,12 +485,22 @@ async function fetchScripts() {
         let html = "";
         for (const s of scripts) {
             const icon = SCRIPT_ICONS[s.id] || "&#128196;";
-            const statusTag = s.loaded
-                ? '<span class="script-tag tag-loaded">Активен</span>'
-                : '<span class="script-tag" style="background:rgba(239,68,68,0.15);color:var(--red)">Не загружен</span>';
             const addonTags = s.addons.length > 0
                 ? ` <span class="script-tag tag-addon">${s.addons.length} аддонов</span>`
                 : "";
+
+            // Autostart toggle state
+            const isAuto = autostartMode === "all" || autostartScripts.has(s.id);
+            const toggleClass = isAuto ? "toggle active" : "toggle";
+
+            // Buttons
+            let btns = "";
+            if (s.loaded) {
+                btns = `<button class="btn btn-unload" onclick="scriptAction('unload','${s.id}')">Выгрузить</button>`;
+                btns += ` <button class="btn btn-reload" onclick="scriptAction('reload','${s.id}')">Обновить</button>`;
+            } else {
+                btns = `<button class="btn btn-load" onclick="scriptAction('load','${s.id}')">Загрузить</button>`;
+            }
 
             html += `<div class="script-item">
                 <div class="script-info">
@@ -403,9 +510,17 @@ async function fetchScripts() {
                         <div class="script-desc">${escHtml(s.description)}</div>
                     </div>
                 </div>
-                <div class="script-meta">
-                    <div class="script-cmd">${escHtml(s.command)}</div>
-                    <div style="margin-top: 4px;">${statusTag} <span class="script-tag tag-lines">${s.lines} строк</span>${addonTags}</div>
+                <div class="script-right">
+                    ${s.loaded
+                        ? '<span class="script-tag tag-loaded">Активен</span>'
+                        : '<span class="script-tag tag-unloaded">Выгружен</span>'}
+                    <span class="script-tag tag-lines">${s.lines} строк</span>
+                    ${addonTags}
+                    <div class="toggle-wrap" onclick="toggleAutostart('${s.id}', this)">
+                        <span class="toggle-label">Авто</span>
+                        <div class="${toggleClass}" data-script="${s.id}"></div>
+                    </div>
+                    ${btns}
                 </div>
             </div>`;
         }
@@ -430,21 +545,70 @@ async function fetchCommands() {
     } catch (e) { console.error(e); }
 }
 
-function escHtml(s) {
-    const div = document.createElement("div");
-    div.textContent = s;
-    return div.innerHTML;
+// ── Actions ──
+
+async function scriptAction(action, name) {
+    try {
+        const r = await fetch(`/api/scripts/${action}/${name}`, { method: "POST" });
+        const d = await r.json();
+
+        if (d.success) {
+            const labels = { load: "загружен", unload: "выгружен", reload: "обновлён" };
+            showToast(`${name} ${labels[action]}`, "success");
+            await fetchScripts();
+            await fetchStatus();
+            await fetchLogs();
+        } else {
+            showToast(d.error || "Ошибка", "error");
+        }
+    } catch (e) {
+        showToast("Ошибка запроса", "error");
+    }
 }
 
-// Initial load
-fetchStatus();
-fetchLogs();
-fetchScripts();
-fetchCommands();
+async function toggleAutostart(name, el) {
+    const toggleDiv = el.querySelector(".toggle");
+    const isActive = toggleDiv.classList.contains("active");
+    const enabled = !isActive; // toggle to the opposite
+
+    try {
+        const r = await fetch(`/api/autostart/${name}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ enabled }),
+        });
+        const d = await r.json();
+
+        if (d.success) {
+            autostartMode = d.mode;
+            if (enabled) autostartScripts.add(name);
+            else autostartScripts.delete(name);
+
+            // Update all toggles visually
+            document.querySelectorAll(".toggle").forEach(t => {
+                const s = t.dataset.script;
+                if (!s) return;
+                const isOn = autostartMode === "all" || autostartScripts.has(s);
+                t.classList.toggle("active", isOn);
+            });
+
+            const label = enabled ? "включён" : "выключен";
+            showToast(`Автозагрузка ${name}: ${label}`, "success");
+        } else {
+            showToast(d.error || "Ошибка", "error");
+        }
+    } catch (e) {
+        showToast("Ошибка запроса", "error");
+    }
+}
+
+// ── Init ──
+Promise.all([fetchAutostart(), fetchStatus(), fetchLogs(), fetchScripts(), fetchCommands()]);
 
 // Auto-refresh
 setInterval(fetchStatus, 5000);
 setInterval(fetchLogs, 3000);
+setInterval(async () => { await fetchAutostart(); await fetchScripts(); }, 10000);
 </script>
 
 </body>

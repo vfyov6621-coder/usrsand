@@ -23,6 +23,9 @@ _bot_state = {
 
 _log_buffer = []
 _MAX_LOG_LINES = 200
+_pyro_client = None  # set by main.py after client is created
+
+AUTOSTART_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts", "autostart.json")
 
 
 def set_bot_status(status, account=None):
@@ -37,6 +40,12 @@ def set_bot_status(status, account=None):
 
 def set_loaded_scripts(scripts):
     _bot_state["scripts"] = scripts
+
+
+def set_pyro_client(client):
+    """Store reference to the Pyrofork Client so web API can manage scripts."""
+    global _pyro_client
+    _pyro_client = client
 
 
 def add_log(message, level="INFO"):
@@ -140,11 +149,12 @@ def api_commands():
     commands = [
         {"cmd": ".mm", "desc": "Меню бота"},
         {"cmd": ".ping", "desc": "Пинг юзербота"},
+        {"cmd": ".lm load/unload/reload/list/info", "desc": "Управление скриптами"},
         {"cmd": ".note save/get/list/del/set", "desc": "Заметки"},
         {"cmd": ".n <name>", "desc": "Быстрый вызов заметки"},
         {"cmd": ".wea <city>", "desc": "Погода"},
         {"cmd": ".tr [lang] <text>", "desc": "Перевод текста"},
-        {"cmd": ".tra/.trd/.trz/.trf/.tru/.trb", "desc": "Перевод (reply)"},
+        {"cmd": ".ya s/d/l/a/b/now/chart/liked", "desc": "Яндекс Музыка"},
         {"cmd": ".ai <text>", "desc": "AI ассистент (Ollama)"},
         {"cmd": ".ai on/off", "desc": "Режим диалога"},
         {"cmd": ".ai clear", "desc": "Очистить историю AI"},
@@ -152,3 +162,139 @@ def api_commands():
         {"cmd": ".ai status", "desc": "Статус Ollama"},
     ]
     return jsonify(commands)
+
+
+# ── Autostart config ──
+
+def _read_autostart():
+    """Read autostart config. Returns set of script names, or None if all should load."""
+    if not os.path.exists(AUTOSTART_FILE):
+        return None  # None = load all (default)
+    try:
+        with open(AUTOSTART_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        mode = data.get("mode", "all")
+        if mode == "all":
+            return None
+        return set(data.get("scripts", []))
+    except Exception:
+        return None
+
+
+def _write_autostart(autostart_set):
+    """Write autostart config."""
+    if autostart_set is None:
+        data = {"mode": "all", "scripts": []}
+    else:
+        data = {"mode": "selected", "scripts": sorted(autostart_set)}
+    os.makedirs(os.path.dirname(AUTOSTART_FILE), exist_ok=True)
+    with open(AUTOSTART_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+
+@app.route("/api/autostart", methods=["GET"])
+def api_autostart_get():
+    """Get autostart configuration."""
+    current = _read_autostart()
+    if current is None:
+        return jsonify({"mode": "all", "scripts": []})
+    return jsonify({"mode": "selected", "scripts": sorted(current)})
+
+
+@app.route("/api/autostart/<script_name>", methods=["POST"])
+def api_autostart_toggle(script_name):
+    """Toggle autostart for a specific script. Body: {"enabled": true/false}"""
+    # Validate script exists
+    scripts_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts")
+    if not os.path.isdir(os.path.join(scripts_dir, script_name)):
+        return jsonify({"success": False, "error": "Script not found"}), 404
+
+    body = request.get_json(silent=True) or {}
+    enabled = body.get("enabled", True)
+
+    current = _read_autostart()
+    if current is None:
+        # switching from "all" mode to "selected" mode
+        # when enabling: start with all currently available scripts
+        available = []
+        for name in sorted(os.listdir(scripts_dir)):
+            if os.path.isdir(os.path.join(scripts_dir, name)) and not name.startswith("_"):
+                if os.path.exists(os.path.join(scripts_dir, name, "main.py")):
+                    available.append(name)
+        current = set(available)
+
+    if enabled:
+        current.add(script_name)
+    else:
+        current.discard(script_name)
+
+    # If all scripts are selected, switch back to "all" mode
+    all_scripts = set()
+    for name in sorted(os.listdir(scripts_dir)):
+        if os.path.isdir(os.path.join(scripts_dir, name)) and not name.startswith("_"):
+            if os.path.exists(os.path.join(scripts_dir, name, "main.py")):
+                all_scripts.add(name)
+    if current >= all_scripts:
+        current = None  # all mode
+
+    _write_autostart(current)
+    result_mode = "all" if current is None else "selected"
+    return jsonify({"success": True, "mode": result_mode, "script": script_name, "enabled": enabled})
+
+
+# ── Script management API ──
+
+@app.route("/api/scripts/load/<script_name>", methods=["POST"])
+def api_script_load(script_name):
+    """Load a script via web panel."""
+    if _pyro_client is None:
+        return jsonify({"success": False, "error": "Бот не подключён"}), 503
+
+    from loader import load_script, get_loaded_names
+
+    if script_name in get_loaded_names():
+        return jsonify({"success": False, "error": "Скрипт уже загружен"})
+
+    result = load_script(script_name, _pyro_client)
+    if result["success"]:
+        # Update web state
+        _bot_state["scripts"] = get_loaded_names()
+        add_log(f"[web] Loaded script: {script_name}")
+        return jsonify(result)
+    else:
+        add_log(f"[web] Error loading {script_name}: {result['error']}", "ERROR")
+        return jsonify(result), 400
+
+
+@app.route("/api/scripts/unload/<script_name>", methods=["POST"])
+def api_script_unload(script_name):
+    """Unload a script via web panel."""
+    from loader import unload_script, get_loaded_names
+
+    result = unload_script(script_name)
+    if result["success"]:
+        _bot_state["scripts"] = get_loaded_names()
+        add_log(f"[web] Unloaded script: {script_name}")
+        return jsonify(result)
+    else:
+        add_log(f"[web] Error unloading {script_name}: {result['error']}", "ERROR")
+        return jsonify(result), 400
+
+
+@app.route("/api/scripts/reload/<script_name>", methods=["POST"])
+def api_script_reload(script_name):
+    """Reload a script via web panel."""
+    if _pyro_client is None:
+        return jsonify({"success": False, "error": "Бот не подключён"}), 503
+
+    from loader import unload_script, load_script, get_loaded_names
+
+    unload_script(script_name)
+    result = load_script(script_name, _pyro_client)
+    if result["success"]:
+        _bot_state["scripts"] = get_loaded_names()
+        add_log(f"[web] Reloaded script: {script_name}")
+        return jsonify(result)
+    else:
+        add_log(f"[web] Error reloading {script_name}: {result['error']}", "ERROR")
+        return jsonify(result), 400

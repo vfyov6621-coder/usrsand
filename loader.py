@@ -46,20 +46,42 @@ def get_available():
     return available
 
 
+def _read_autostart():
+    """Read autostart config. Returns set of script names, or None if all should load."""
+    autostart_file = os.path.join(Config.SCRIPTS_DIR, "autostart.json")
+    if not os.path.exists(autostart_file):
+        return None  # None = load all (default)
+    try:
+        import json
+        with open(autostart_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        mode = data.get("mode", "all")
+        if mode == "all":
+            return None
+        return set(data.get("scripts", []))
+    except Exception:
+        return None
+
+
 def load_all_scripts(client):
     """Load all scripts at startup. Returns list of loaded script names."""
     available = get_available()
     loaded = []
 
+    # Check autostart config
+    autostart = _read_autostart()
+    if autostart is not None:
+        # Only load scripts in the autostart set
+        available = [s for s in available if s in autostart]
+        if len(available) < len(autostart):
+            missing = autostart - set(available)
+            for m in missing:
+                logger.warning(f"Autostart script not found: {m}")
+
     # Make sure scripts package is importable
     scripts_parent = os.path.dirname(Config.SCRIPTS_DIR)
     if scripts_parent not in sys.path:
         sys.path.insert(0, scripts_parent)
-
-    # Load _utils.py
-    utils_path = os.path.join(Config.SCRIPTS_DIR, "_utils.py")
-    if os.path.exists(utils_path):
-        pass  # scripts_parent is already in sys.path
 
     for name in available:
         result = load_script(name, client)

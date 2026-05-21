@@ -39,7 +39,7 @@ from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineK
 
 from config import Config
 from loader import load_all_scripts, load_script, unload_script, reload_script, get_script_info, get_loaded_names, get_available
-from web import app, set_bot_status, set_loaded_scripts, add_log
+from web import app, set_bot_status, set_loaded_scripts, add_log, set_pyro_client
 
 # Simple logging
 logging.basicConfig(
@@ -492,6 +492,7 @@ async def main():
     # Load all scripts
     _loaded_scripts = load_all_scripts(client)
     set_loaded_scripts(_loaded_scripts)
+    set_pyro_client(client)
     add_log(f"Loaded {len(_loaded_scripts)} scripts: {', '.join(_loaded_scripts)}")
     logger.info(f"Loaded {len(_loaded_scripts)} scripts: {', '.join(_loaded_scripts)}")
 
