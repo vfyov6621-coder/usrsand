@@ -232,6 +232,7 @@ async def _cmd_help(message) -> None:
         "<code>.ya liked</code> \u2014 любимые треки\n"
         "<code>.ya chart</code> \u2014 чарт\n"
         "<code>.ya now</code> \u2014 что сейчас играет\n"
+        "<code>.ya debug</code> \u2014 диагностика API\n"
         "<code>.ya token</code> <i>токен</i> \u2014 установить токен\n\n"
         "<i>Получить токен: </i>"
         '<a href="https://oauth.yandex.ru/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d">'
@@ -804,41 +805,42 @@ def _fetch_now_playing():
     ym = _get_client()
 
     # ── Method 1: queues API ──
-    if hasattr(ym, "queues"):
-        try:
-            queues = ym.queues()
-            log.debug("queues() returned: %s", type(queues))
-            if queues:
-                q = queues[0]
-                log.debug("first queue id=%s type=%s", getattr(q, "id", "?"), type(q).__name__)
-                qid = getattr(q, "id", None)
-                if qid:
-                    queue_tracks = ym.queues_items(qid)
-                    items = (getattr(queue_tracks, "tracks", None)
-                             or getattr(queue_tracks, "items", None)
-                             or [])
-                    log.debug("queue items count: %s", len(items))
-                    if items:
-                        first = items[0]
-                        track_id = getattr(first, "track_id", None)
-                        log.debug("first item track_id=%s", track_id)
-                        if track_id:
-                            tracks = ym.tracks(str(track_id))
-                            if tracks:
-                                ctx = getattr(q, "context", None)
-                                ctx_type = getattr(ctx, "type", None) if ctx else None
-                                return tracks[0], ctx_type
-            else:
-                log.debug("queues() returned empty/falsy")
-        except Exception as e:
-            log.warning("queues API failed: %s", e)
+    # yandex-music >= 2.x has queues(), but 3.x may have renamed it.
+    # Try all possible names.
+    for q_method in ("queues", "get_queues", "list_queues", "queues_list"):
+        if hasattr(ym, q_method):
+            try:
+                queues = getattr(ym, q_method)()
+                if queues:
+                    q = queues[0]
+                    qid = getattr(q, "id", None)
+                    if qid:
+                        qi_method = "queues_items"
+                        if not hasattr(ym, qi_method):
+                            qi_method = "get_queues_items"
+                        if hasattr(ym, qi_method):
+                            queue_tracks = getattr(ym, qi_method)(qid)
+                            items = (getattr(queue_tracks, "tracks", None)
+                                     or getattr(queue_tracks, "items", None)
+                                     or [])
+                            if items:
+                                first = items[0]
+                                track_id = getattr(first, "track_id", None)
+                                if track_id:
+                                    tracks = ym.tracks(str(track_id))
+                                    if tracks:
+                                        ctx = getattr(q, "context", None)
+                                        ctx_type = getattr(ctx, "type", None) if ctx else None
+                                        return tracks[0], ctx_type
+            except Exception as e:
+                log.warning("%s failed: %s", q_method, e)
+            break  # only try the first matching method
 
     # ── Method 2: player_state / player ──
-    for method_name in ("player_state", "player"):
+    for method_name in ("player_state", "player", "player_state_with_context"):
         if hasattr(ym, method_name):
             try:
                 result = getattr(ym, method_name)()
-                log.debug("%s() returned: %s", method_name, type(result))
                 if result:
                     track = getattr(result, "track", None)
                     if not track and hasattr(result, "tracks"):
@@ -850,40 +852,14 @@ def _fetch_now_playing():
             except Exception as e:
                 log.debug("%s failed: %s", method_name, e)
 
-    # ── Method 3: landing blocks ──
-    for block_ids in [
-        ["recent"],
-        ["personal-recommendations"],
-        ["podcasts", "new-releases", "recent"],
-    ]:
-        try:
-            landing = ym.landing(block_ids)
-            if landing and landing.blocks:
-                for block in landing.blocks:
-                    bid = str(getattr(block, "block_id", ""))
-                    log.debug("landing block: %s", bid)
-                    entities = getattr(block, "entities", None) or []
-                    for ent in entities:
-                        track = getattr(ent, "track", None)
-                        if not track:
-                            # try to fetch from TrackShort
-                            if hasattr(ent, "fetch_track"):
-                                try:
-                                    track = ent.fetch_track()
-                                except Exception:
-                                    pass
-                        if track:
-                            return track, bid
-        except Exception as e:
-            log.debug("landing(%s) failed: %s", block_ids, e)
-
-    # ── Method 4: last played from feed ──
+    # ── Method 3: feed (last played / recent) ──
     if hasattr(ym, "feed"):
         try:
             feed = ym.feed()
             if feed:
+                # feed.generated contains recent listening activity
                 gen = getattr(feed, "generated", None) or []
-                for g in (gen[:3] if gen else []):
+                for g in (gen[:5] if gen else []):
                     tracks_data = getattr(g, "tracks", None) or []
                     for td in tracks_data:
                         track = getattr(td, "track", None)
@@ -893,9 +869,33 @@ def _fetch_now_playing():
                             except Exception:
                                 pass
                         if track:
-                            return track, "feed"
+                            return track, "last_played"
         except Exception as e:
-            log.debug("feed failed: %s", e)
+            log.warning("feed failed: %s", e)
+
+    # ── Method 4: landing blocks ──
+    for block_ids in [
+        ["recent"],
+        ["personal-recommendations"],
+    ]:
+        try:
+            landing = ym.landing(block_ids)
+            if landing and landing.blocks:
+                for block in landing.blocks:
+                    bid = str(getattr(block, "block_id", ""))
+                    entities = getattr(block, "entities", None) or []
+                    for ent in entities:
+                        track = getattr(ent, "track", None)
+                        if not track:
+                            if hasattr(ent, "fetch_track"):
+                                try:
+                                    track = ent.fetch_track()
+                                except Exception:
+                                    pass
+                        if track:
+                            return track, bid
+        except Exception as e:
+            log.debug("landing(%s) failed: %s", block_ids, e)
 
     return None, None
 
@@ -944,7 +944,9 @@ async def _cmd_now(client, message) -> None:
             cover_path = await _run_sync(_generate_now_cover, cover_uri)
 
         # ── build caption ──
-        lines = ["☞ <b>Сейчас играет:</b>", ""]
+        is_last = ctx_type == "last_played"
+        label = "Последний трек:" if is_last else "Сейчас играет:"
+        lines = [f"☞ <b>{label}</b>", ""]
         lines.append(f"🎵 <b>{track.title}</b>")
         lines.append(f"🎤 {artists}")
         if album:
@@ -981,6 +983,72 @@ async def _cmd_now(client, message) -> None:
             pass
     except Exception as e:
         log.error("now error: %s", e, exc_info=True)
+        try:
+            await message.edit_text(f"\u274c Ошибка: {e}")
+        except Exception:
+            pass
+
+
+async def _cmd_debug(message) -> None:
+    """Show diagnostic info about yandex-music client."""
+    from pyrogram.enums import ParseMode
+
+    try:
+        ym = _get_client()
+        methods = sorted([m for m in dir(ym) if not m.startswith("_") and callable(getattr(ym, m, None))])
+
+        # group relevant methods
+        queue_methods = [m for m in methods if "queue" in m.lower()]
+        player_methods = [m for m in methods if "player" in m.lower() or "play" in m.lower()]
+        track_methods = [m for m in methods if "track" in m.lower()]
+        feed_methods = [m for m in methods if "feed" in m.lower()]
+
+        import yandex_music
+        ver = getattr(yandex_music, "__version__", "?")
+
+        lines = [f"<b>🔧 Yandex Music Debug</b>\n"]
+        lines.append(f"Версия библиотеки: <code>{ver}</code>")
+        lines.append(f"Всего методов: {len(methods)}\n")
+
+        if queue_methods:
+            lines.append(f"<b>Queue ({len(queue_methods)}):</b>\n<code>{', '.join(queue_methods)}</code>")
+        if player_methods:
+            lines.append(f"\n<b>Player ({len(player_methods)}):</b>\n<code>{', '.join(player_methods)}</code>")
+        if track_methods:
+            lines.append(f"\n<b>Track ({len(track_methods[:15])}):</b>\n<code>{', '.join(track_methods[:15])}</code>")
+        if feed_methods:
+            lines.append(f"\n<b>Feed ({len(feed_methods)}):</b>\n<code>{', '.join(feed_methods)}</code>")
+
+        # test feed
+        if hasattr(ym, "feed"):
+            try:
+                feed = await _run_sync(ym.feed)
+                if feed:
+                    gen = getattr(feed, "generated", None) or []
+                    total_tracks = 0
+                    for g in gen[:3]:
+                        td = getattr(g, "tracks", None) or []
+                        total_tracks += len(td)
+                    lines.append(f"\n<b>Feed test:</b> {len(gen)} блоков, {total_tracks} треков в первых 3")
+            except Exception as e:
+                lines.append(f"\n<b>Feed test:</b> ❌ {e}")
+
+        text = "\n".join(lines)
+        if len(text) > 4000:
+            text = text[:3900] + "\n<i>...обрезано</i>"
+
+        try:
+            await message.edit_text(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+        except Exception:
+            await message.reply(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+
+    except ValueError as e:
+        try:
+            await message.edit_text(f"\u274c {e}")
+        except Exception:
+            pass
+    except Exception as e:
+        log.error("debug error: %s", e, exc_info=True)
         try:
             await message.edit_text(f"\u274c Ошибка: {e}")
         except Exception:
@@ -1062,6 +1130,8 @@ def register(client):
                 await _cmd_chart(client, message)
             elif sub in ("now", "np", "playing"):
                 await _cmd_now(client, message)
+            elif sub == "debug":
+                await _cmd_debug(message)
             elif sub == "token":
                 await _cmd_token(message)
             else:
