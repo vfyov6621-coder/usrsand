@@ -911,17 +911,16 @@ async def _cmd_now(client, message) -> None:
 
         if not track:
             ym_ver = "?.?"
+            available = []
             try:
                 import yandex_music
                 ym_ver = getattr(yandex_music, "__version__", "?")
+                ym = _get_client()
+                for m in ("queues", "queues_items", "player_state", "player", "feed", "landing"):
+                    if hasattr(ym, m):
+                        available.append(m)
             except Exception:
                 pass
-
-            # collect available API methods for diagnostics
-            available = []
-            for m in ("queues", "queues_items", "player_state", "player", "feed", "landing"):
-                if hasattr(ym, m):
-                    available.append(m)
 
             await message.edit_text(
                 f"📭 Не удалось определить играющий трек\n\n"
@@ -930,7 +929,7 @@ async def _cmd_now(client, message) -> None:
                 f"  (нужен десктоп/мобильный клиент ЯМ)\n"
                 f"• Нет активной очереди воспроизведения\n\n"
                 f"<i>Версия yandex-music: {ym_ver}</i>\n"
-                f"<i>Доступные методы: {', '.join(available)}</i>",
+                f"<i>Доступные методы: {', '.join(available) if available else 'none'}</i>",
                 parse_mode=ParseMode.HTML,
             )
             return
