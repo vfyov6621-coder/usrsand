@@ -800,64 +800,93 @@ async def _generate_now_cover(cover_uri: str) -> str | None:
 def _fetch_now_playing():
     """Fetch currently playing track. Returns (track, context_type) or (None, None).
 
-    Tries multiple methods to detect playing track.
+    Uses yandex-music 3.x API:
+      1. queues_list() → list of Queue objects
+      2. queue(queue_id) → full queue with track IDs
+      3. feed() → last played / recent (fallback)
+      4. landing() → recommendations (fallback)
     """
     ym = _get_client()
 
-    # ── Method 1: queues API ──
-    # yandex-music >= 2.x has queues(), but 3.x may have renamed it.
-    # Try all possible names.
-    for q_method in ("queues", "get_queues", "list_queues", "queues_list"):
-        if hasattr(ym, q_method):
-            try:
-                queues = getattr(ym, q_method)()
-                if queues:
-                    q = queues[0]
+    # ── Method 1: queues_list + queue (yandex-music 3.x) ──
+    # queues_list() возвращает список Queue объектов с id и текущим треком
+    ql_method = None
+    for candidate in ("queues_list", "queuesList", "queues"):
+        if hasattr(ym, candidate):
+            ql_method = candidate
+            break
+
+    if ql_method:
+        try:
+            queues = getattr(ym, ql_method)()
+            if queues:
+                for q in queues:
                     qid = getattr(q, "id", None)
-                    if qid:
-                        qi_method = "queues_items"
-                        if not hasattr(ym, qi_method):
-                            qi_method = "get_queues_items"
-                        if hasattr(ym, qi_method):
-                            queue_tracks = getattr(ym, qi_method)(qid)
-                            items = (getattr(queue_tracks, "tracks", None)
-                                     or getattr(queue_tracks, "items", None)
-                                     or [])
-                            if items:
-                                first = items[0]
-                                track_id = getattr(first, "track_id", None)
-                                if track_id:
-                                    tracks = ym.tracks(str(track_id))
-                                    if tracks:
-                                        ctx = getattr(q, "context", None)
-                                        ctx_type = getattr(ctx, "type", None) if ctx else None
-                                        return tracks[0], ctx_type
-            except Exception as e:
-                log.warning("%s failed: %s", q_method, e)
-            break  # only try the first matching method
+                    if not qid:
+                        continue
 
-    # ── Method 2: player_state / player ──
-    for method_name in ("player_state", "player", "player_state_with_context"):
-        if hasattr(ym, method_name):
-            try:
-                result = getattr(ym, method_name)()
-                if result:
-                    track = getattr(result, "track", None)
-                    if not track and hasattr(result, "tracks"):
-                        tracks_list = result.tracks
-                        if tracks_list:
-                            track = tracks_list[0]
+                    # queue() возвращает полную очередь с треками
+                    q_method = None
+                    for qm in ("queue", "get_queue"):
+                        if hasattr(ym, qm):
+                            q_method = qm
+                            break
+
+                    if not q_method:
+                        log.debug("no queue() method available")
+                        break
+
+                    queue_data = getattr(ym, q_method)(qid)
+                    if not queue_data:
+                        continue
+
+                    # ищем текущий трек из очереди
+                    # атрибут может быть track / current_track / tracks
+                    track = getattr(queue_data, "track", None)
+                    if not track:
+                        track = getattr(queue_data, "current_track", None)
+
+                    # если нет прямого track — пробуем из списка tracks
+                    if not track:
+                        items = getattr(queue_data, "tracks", None) or getattr(queue_data, "items", None)
+                        if items:
+                            for item in items:
+                                # каждый item может быть Track или QueueItem
+                                t = None
+                                if hasattr(item, "track"):
+                                    t = item.track
+                                elif hasattr(item, "track_id"):
+                                    tid = item.track_id
+                                    if isinstance(tid, int):
+                                        ts = ym.tracks([str(tid)])
+                                        if ts:
+                                            t = ts[0]
+                                    elif isinstance(tid, str):
+                                        ts = ym.tracks(tid)
+                                        if ts:
+                                            t = ts[0]
+                                else:
+                                    t = item  # сам item — это Track
+                                if t:
+                                    track = t
+                                    break
+
                     if track:
-                        return track, method_name
-            except Exception as e:
-                log.debug("%s failed: %s", method_name, e)
+                        ctx = getattr(queue_data, "context", None) or getattr(q, "context", None)
+                        ctx_type = getattr(ctx, "type", None) if ctx else None
+                        return track, ctx_type or "queue"
 
-    # ── Method 3: feed (last played / recent) ──
+                    log.debug("queue(%s) returned no track", qid)
+
+        except Exception as e:
+            log.warning("queue method failed: %s", e, exc_info=True)
+
+    # ── Method 2: feed (last played / recent) ──
     if hasattr(ym, "feed"):
         try:
             feed = ym.feed()
             if feed:
-                # feed.generated contains recent listening activity
+                # feed.generated содержит недавнюю активность
                 gen = getattr(feed, "generated", None) or []
                 for g in (gen[:5] if gen else []):
                     tracks_data = getattr(g, "tracks", None) or []
@@ -873,11 +902,8 @@ def _fetch_now_playing():
         except Exception as e:
             log.warning("feed failed: %s", e)
 
-    # ── Method 4: landing blocks ──
-    for block_ids in [
-        ["recent"],
-        ["personal-recommendations"],
-    ]:
+    # ── Method 3: landing blocks ──
+    for block_ids in [["recent"], ["personal-recommendations"]]:
         try:
             landing = ym.landing(block_ids)
             if landing and landing.blocks:
@@ -886,12 +912,11 @@ def _fetch_now_playing():
                     entities = getattr(block, "entities", None) or []
                     for ent in entities:
                         track = getattr(ent, "track", None)
-                        if not track:
-                            if hasattr(ent, "fetch_track"):
-                                try:
-                                    track = ent.fetch_track()
-                                except Exception:
-                                    pass
+                        if not track and hasattr(ent, "fetch_track"):
+                            try:
+                                track = ent.fetch_track()
+                            except Exception:
+                                pass
                         if track:
                             return track, bid
         except Exception as e:
@@ -910,15 +935,36 @@ async def _cmd_now(client, message) -> None:
         track, ctx_type = await _run_sync(_fetch_now_playing)
 
         if not track:
+            # диагностика
             ym_ver = "?.?"
             available = []
+            queues_info = ""
             try:
                 import yandex_music
                 ym_ver = getattr(yandex_music, "__version__", "?")
                 ym = _get_client()
-                for m in ("queues", "queues_items", "player_state", "player", "feed", "landing"):
+                for m in ("queues_list", "queuesList", "queues", "queue", "feed", "landing"):
                     if hasattr(ym, m):
                         available.append(m)
+
+                # попробуем получить список очередей для диагностики
+                ql = None
+                for qm in ("queues_list", "queuesList", "queues"):
+                    if hasattr(ym, qm):
+                        try:
+                            ql = getattr(ym, qm)()
+                        except Exception:
+                            pass
+                        break
+                if ql:
+                    queues_info = f"Очередей найдено: {len(ql)}\n"
+                    for qi, q in enumerate(ql[:3]):
+                        qid = getattr(q, "id", "?")
+                        qctx = getattr(q, "context", None)
+                        qtype = getattr(qctx, "type", "?") if qctx else "?"
+                        queues_info += f"  [{qi}] id={qid}, context={qtype}\n"
+                else:
+                    queues_info = "Очереди: пусто или недоступны"
             except Exception:
                 pass
 
@@ -928,8 +974,10 @@ async def _cmd_now(client, message) -> None:
                 f"• Музыка играет в браузере — очередь не синхронизируется\n"
                 f"  (нужен десктоп/мобильный клиент ЯМ)\n"
                 f"• Нет активной очереди воспроизведения\n\n"
+                f"<b>Диагностика:</b>\n"
                 f"<i>Версия yandex-music: {ym_ver}</i>\n"
-                f"<i>Доступные методы: {', '.join(available) if available else 'none'}</i>",
+                f"<i>Методы: {', '.join(available) if available else 'none'}</i>\n"
+                f"<i>{queues_info}</i>",
                 parse_mode=ParseMode.HTML,
             )
             return
@@ -995,31 +1043,61 @@ async def _cmd_debug(message) -> None:
 
     try:
         ym = _get_client()
-        methods = sorted([m for m in dir(ym) if not m.startswith("_") and callable(getattr(ym, m, None))])
-
-        # group relevant methods
-        queue_methods = [m for m in methods if "queue" in m.lower()]
-        player_methods = [m for m in methods if "player" in m.lower() or "play" in m.lower()]
-        track_methods = [m for m in methods if "track" in m.lower()]
-        feed_methods = [m for m in methods if "feed" in m.lower()]
-
         import yandex_music
         ver = getattr(yandex_music, "__version__", "?")
 
-        lines = [f"<b>🔧 Yandex Music Debug</b>\n"]
-        lines.append(f"Версия библиотеки: <code>{ver}</code>")
-        lines.append(f"Всего методов: {len(methods)}\n")
+        # ── ЧАСТЬ 1: диагностика очередей (самое важное) ──
+        lines = [f"<b>🔧 Yandex Music Debug</b>\nВерсия: <code>{ver}</code>\n"]
 
-        if queue_methods:
-            lines.append(f"<b>Queue ({len(queue_methods)}):</b>\n<code>{', '.join(queue_methods)}</code>")
-        if player_methods:
-            lines.append(f"\n<b>Player ({len(player_methods)}):</b>\n<code>{', '.join(player_methods)}</code>")
-        if track_methods:
-            lines.append(f"\n<b>Track ({len(track_methods[:15])}):</b>\n<code>{', '.join(track_methods[:15])}</code>")
-        if feed_methods:
-            lines.append(f"\n<b>Feed ({len(feed_methods)}):</b>\n<code>{', '.join(feed_methods)}</code>")
+        ql_method = None
+        for qm in ("queues_list", "queuesList", "queues"):
+            if hasattr(ym, qm):
+                ql_method = qm
+                break
 
-        # test feed
+        if ql_method:
+            try:
+                queues = await _run_sync(getattr(ym, ql_method))
+                if queues:
+                    lines.append(f"<b>▶ Очередей: {len(queues)}</b>")
+                    for qi, q in enumerate(queues[:5]):
+                        qid = getattr(q, "id", "?")
+                        qctx = getattr(q, "context", None)
+                        qtype = getattr(qctx, "type", "?") if qctx else "?"
+                        lines.append(f"  [{qi}] id={qid}, ctx={qtype}")
+
+                    # пробуем queue(id) для первой
+                    first_qid = getattr(queues[0], "id", None)
+                    if first_qid and hasattr(ym, "queue"):
+                        try:
+                            qd = await _run_sync(ym.queue, first_qid)
+                            if qd:
+                                attrs = sorted([a for a in dir(qd) if not a.startswith("_") and not callable(getattr(qd, a, None))])
+                                lines.append(f"\n<b>queue() данные:</b> <code>{', '.join(attrs[:25])}</code>")
+                                for attr in ("track", "current_track", "tracks", "items"):
+                                    val = getattr(qd, attr, None)
+                                    if val is not None:
+                                        if isinstance(val, list):
+                                            lines.append(f"  • {attr}: list[{len(val)}]")
+                                            if val:
+                                                i0 = val[0]
+                                                i0_type = type(i0).__name__
+                                                i0_attrs = sorted([a for a in dir(i0) if not a.startswith("_") and not callable(getattr(i0, a, None))])[:12]
+                                                lines.append(f"    [0] {i0_type}: {', '.join(i0_attrs)}")
+                                        else:
+                                            lines.append(f"  • {attr}: {type(val).__name__} = {str(val)[:60]}")
+                        except Exception as e:
+                            lines.append(f"\nqueue() ошибка: {e}")
+                else:
+                    lines.append("<b>▶ Очередей: 0</b>")
+                    lines.append("<i>Музыка не играет или играет в браузере</i>")
+            except Exception as e:
+                lines.append(f"<b>▶ queues_list ошибка:</b> {e}")
+        else:
+            lines.append("<b>▶ queues_list: метод не найден</b>")
+
+        # ── ЧАСТЬ 2: feed ──
+        lines.append("")
         if hasattr(ym, "feed"):
             try:
                 feed = await _run_sync(ym.feed)
@@ -1029,18 +1107,20 @@ async def _cmd_debug(message) -> None:
                     for g in gen[:3]:
                         td = getattr(g, "tracks", None) or []
                         total_tracks += len(td)
-                    lines.append(f"\n<b>Feed test:</b> {len(gen)} блоков, {total_tracks} треков в первых 3")
+                    lines.append(f"<b>▶ Feed:</b> {len(gen)} блоков, {total_tracks} треков")
+                else:
+                    lines.append("<b>▶ Feed:</b> пусто")
             except Exception as e:
-                lines.append(f"\n<b>Feed test:</b> ❌ {e}")
+                lines.append(f"<b>▶ Feed:</b> ❌ {e}")
+        else:
+            lines.append("<b>▶ Feed:</b> нет метода")
 
-        text = "\n".join(lines)
-        if len(text) > 4000:
-            text = text[:3900] + "\n<i>...обрезано</i>"
-
+        # отправляем часть 1
+        text1 = "\n".join(lines)
         try:
-            await message.edit_text(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+            await message.edit_text(text1, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
         except Exception:
-            await message.reply(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+            await message.reply(text1, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
     except ValueError as e:
         try:
