@@ -836,18 +836,24 @@ def _fetch_ynison_state():
     if not token:
         return None
 
-    device_id = str(uuid.uuid4())
+    device_id = uuid.uuid4().hex[:16]
+    device_info_str = json.dumps({"app_name": "Chrome", "type": 1})  # double-encoded
 
-    ynison_protocol = (
-        'Bearer, v2, '
-        '{"Ynison-Device-Id": "' + device_id + '", '
-        '"Ynison-Device-Info": {"Platform": "Web", "OsFamily": "Linux", '
-        '"OsVersion": "5.15", "Browser": "Chrome", "Capabilities": "[]"}}'
-    )
+    def _build_proto(**extra):
+        """Build Ynison Sec-WebSocket-Protocol header value.
+
+        Ynison-Device-Info must be a JSON-serialized string (not nested object),
+        resulting in double-encoded JSON when embedded in the outer object.
+        """
+        proto_obj = {"Ynison-Device-Id": device_id, "Ynison-Device-Info": device_info_str}
+        proto_obj.update(extra)
+        return 'Bearer, v2, ' + json.dumps(proto_obj, separators=(',', ':'))
 
     try:
-        async def _ws_handshake(host, path, port=443):
+        async def _ws_handshake(host, path, port=443, protocol=None):
             """Perform raw WebSocket handshake, return (reader, writer)."""
+            if not protocol:
+                protocol = _build_proto()
             ssl_ctx = _ssl.create_default_context()
             reader, writer = await asyncio.wait_for(
                 asyncio.open_connection(host, port, ssl=ssl_ctx),
@@ -864,7 +870,7 @@ def _fetch_ynison_state():
                 f"Connection: Upgrade\r\n"
                 f"Sec-WebSocket-Key: {ws_key}\r\n"
                 f"Sec-WebSocket-Version: 13\r\n"
-                f"Sec-WebSocket-Protocol: {ynison_protocol}\r\n"
+                f"Sec-WebSocket-Protocol: {protocol}\r\n"
                 f"Authorization: OAuth {token}\r\n"
                 f"Origin: https://music.yandex.ru\r\n"
                 f"\r\n"
@@ -969,37 +975,47 @@ def _fetch_ynison_state():
             if not redirect_msg:
                 return None
 
-            # Парсим ответ редиректора — ticket и host
+            # Парсим ответ редиректора — host, redirect_ticket, session_id
             target_host = None
-            ticket = None
+            redirect_ticket = None
+            session_id = None
 
             try:
                 data = json.loads(redirect_msg)
                 target_host = data.get("host") or data.get("targetHost") or data.get("target_host")
-                ticket = data.get("ticket")
+                redirect_ticket = data.get("redirect_ticket") or data.get("ticket")
+                session_id = data.get("session_id")
             except (json.JSONDecodeError, TypeError):
                 pass
 
-            if not target_host or not ticket:
+            if not target_host or not redirect_ticket:
                 import re
                 host_match = re.search(r'"host"\s*:\s*"([^"]+)"', redirect_msg)
-                ticket_match = re.search(r'"ticket"\s*:\s*"([^"]+)"', redirect_msg)
+                ticket_match = re.search(r'"(?:redirect_)?ticket"\s*:\s*"?([^"\s,}]+)', redirect_msg)
+                session_match = re.search(r'"session_id"\s*:\s*(\d+)', redirect_msg)
                 if host_match:
                     target_host = host_match.group(1)
                 if ticket_match:
-                    ticket = ticket_match.group(1)
+                    redirect_ticket = ticket_match.group(1)
+                if session_match:
+                    session_id = session_match.group(1)
 
-            if not target_host or not ticket:
+            if not target_host or not redirect_ticket:
                 log.warning("Ynison: could not parse redirector response: %s", redirect_msg[:200])
                 return None
 
-            log.info("Ynison redirector: host=%s", target_host)
+            log.info("Ynison redirector: host=%s, session_id=%s", target_host, session_id)
 
-            # ── Step 2: Connect to state service ──
+            # ── Step 2: Connect to state service (with ticket + session_id in header) ──
             try:
+                state_proto = _build_proto(
+                    **{"Ynison-Redirect-Ticket": str(redirect_ticket)},
+                    **({"Ynison-Session-Id": str(session_id)} if session_id else {}),
+                )
                 reader, writer = await _ws_handshake(
                     target_host,
                     "/ynison_state.YnisonStateService/PutYnisonState",
+                    protocol=state_proto,
                 )
                 if not reader:
                     return None
@@ -1014,12 +1030,12 @@ def _fetch_ynison_state():
                             "device_info": {
                                 "device_id": device_id,
                                 "capabilities": [],
-                                "type": "WEB",
+                                "type": 1,
                                 "app_name": "sandusr",
                             },
                         }
                     }],
-                    "ticket": ticket,
+                    "ticket": redirect_ticket,
                 })
                 await _ws_send_text(writer, init_msg)
 
