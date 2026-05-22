@@ -855,17 +855,187 @@ def _fetch_now_playing_raw():
     return None, None
 
 
-def _fetch_now_playing():
-    """Fetch currently playing track. Returns (track_obj_or_dict, context_type) or (None, None).
+# ───────────────────── SMTC (Windows Media Controls) ─────────────────────
 
-    Tries:
-      1. yandex-music library queues_list + queue
-      2. yandex-music library feed
-      3. Raw HTTP API (bypasses library timeout)
+_smtc_available = None  # кешируем результат проверки
+
+
+def _check_smtc() -> bool:
+    """Check if Windows SMTC is available on this platform."""
+    global _smtc_available
+    if _smtc_available is not None:
+        return _smtc_available
+    try:
+        import platform
+        if platform.system() != "Windows":
+            _smtc_available = False
+            return False
+        from winrt.windows.media.control import GlobalSystemMediaTransportControlsSessionManager as GSMTC
+        _smtc_available = True
+        return True
+    except ImportError:
+        _smtc_available = False
+        return False
+    except Exception:
+        _smtc_available = False
+        return False
+
+
+def _get_smtc_now_playing() -> dict | None:
+    """Get currently playing track from Windows System Media Transport Controls.
+
+    Returns dict with keys: title, artist, status, app_id
+    or None if nothing is playing / SMTC unavailable.
     """
-    ym = _get_client()
+    if not _check_smtc():
+        return None
+    try:
+        import asyncio
+        from winrt.windows.media.control import (
+            GlobalSystemMediaTransportControlsSessionManager as GSMTC,
+            GlobalSystemMediaTransportControlsSessionPlaybackStatus as PlaybackStatus,
+        )
 
-    # ── Method 1: queues_list + queue (через библиотеку) ──
+        # WinRT async — запускаем через event loop
+        loop = asyncio.new_event_loop()
+        try:
+            session_mgr = loop.run_until_complete(GSMTC.request_async())
+            if not session_mgr:
+                return None
+            sessions = session_mgr.get_sessions()
+            if not sessions:
+                return None
+
+            # берём текущую сессию
+            current = session_mgr.get_current_session()
+            if not current:
+                # если нет текущей — берём первую активную
+                for s in sessions:
+                    try:
+                        info = loop.run_until_complete(s.try_get_media_properties_async())
+                        if info.title:
+                            current = s
+                            break
+                    except Exception:
+                        continue
+            if not current:
+                return None
+
+            # получаем свойства медиа
+            info = loop.run_until_complete(current.try_get_media_properties_async())
+            title = info.title or ""
+            artist = info.artist or ""
+            if not title and not artist:
+                return None
+
+            # получаем статус воспроизведения
+            status = "Unknown"
+            try:
+                playback_info = current.get_playback_info()
+                ps = playback_info.playback_status
+                status_map = {
+                    PlaybackStatus.PLAYING: "Playing",
+                    PlaybackStatus.PAUSED: "Paused",
+                    PlaybackStatus.STOPPED: "Stopped",
+                    PlaybackStatus.CLOSED: "Closed",
+                    PlaybackStatus.OPENED: "Opened",
+                }
+                status = status_map.get(ps, str(ps))
+            except Exception:
+                pass
+
+            # app id
+            app_id = ""
+            try:
+                app_id = current.source_app_user_model_id or ""
+            except Exception:
+                pass
+
+            return {
+                "title": title,
+                "artist": artist,
+                "status": status,
+                "app_id": app_id,
+            }
+        finally:
+            loop.close()
+
+    except Exception as e:
+        log.debug("SMTC error: %s", e)
+        return None
+
+
+def _smtc_search_track(artist: str, title: str):
+    """Search Yandex Music for a track by artist+title from SMTC.
+    Returns a library Track object or None.
+    """
+    try:
+        ym = _get_client()
+        query = f"{artist} - {title}" if artist and title else title or artist
+        if not query:
+            return None
+
+        result = ym.search(query, "track")
+        if not result or not result.tracks or not result.tracks.results:
+            return None
+
+        # ищем точное совпадение
+        for track in result.tracks.results[:5]:
+            track_artists = [a.name.lower() for a in (track.artists or [])]
+            track_title = (track.title or "").lower()
+            search_artist = artist.lower().strip()
+            search_title = title.lower().strip()
+
+            if search_artist in track_artists and search_title == track_title:
+                return track
+
+        # неточного совпадения — берём первый результат
+        return result.tracks.results[0]
+
+    except Exception as e:
+        log.warning("smtc search failed: %s", e)
+        return None
+
+
+def _fetch_now_playing():
+    """Fetch currently playing track. Returns (track_obj, context_type) or (None, None).
+
+    Priority:
+      1. Windows SMTC + Yandex Music search (most reliable)
+      2. Yandex Music library queues_list + queue
+      3. Yandex Music library feed
+      4. Raw HTTP API fallback
+    """
+    # ── Method 0: SMTC (Windows only — works with ANY player) ──
+    smtc = _get_smtc_now_playing()
+    if smtc and smtc.get("title"):
+        # enrich with Yandex Music data (cover, album, etc.)
+        track = _smtc_search_track(smtc.get("artist", ""), smtc.get("title", ""))
+        if track:
+            # добавляем SMTC-специфичные атрибуты к треку
+            track._smtc_status = smtc.get("status", "Unknown")
+            track._smtc_app = smtc.get("app_id", "")
+            track._smtc_artist_raw = smtc.get("artist", "")
+            track._smtc_title_raw = smtc.get("title", "")
+            return track, "smtc"
+
+        # если Yandex Music search не сработал — возвращаем raw dict
+        return {
+            "title": smtc["title"],
+            "artists": [{"name": smtc["artist"]}] if smtc.get("artist") else [],
+            "albums": [],
+            "duration_ms": None,
+            "cover_uri": None,
+            "_smtc_status": smtc.get("status", "Unknown"),
+            "_smtc_app": smtc.get("app_id", ""),
+        }, "smtc_raw"
+
+    # ── Method 1: yandex-music library queues_list + queue ──
+    try:
+        ym = _get_client()
+    except Exception:
+        return None, None
+
     ql_method = None
     for candidate in ("queues_list", "queuesList", "queues"):
         if hasattr(ym, candidate):
@@ -940,7 +1110,7 @@ def _fetch_now_playing():
         except Exception as e:
             log.warning("library feed failed: %s", e)
 
-    # ── Method 3: raw HTTP API (обходит таймаут библиотеки) ──
+    # ── Method 3: raw HTTP API fallback ──
     try:
         track_data, ctx = _fetch_now_playing_raw()
         if track_data:
@@ -1012,8 +1182,24 @@ async def _cmd_now(client, message) -> None:
 
         # ── build caption ──
         is_last = ctx_type in ("last_played", "feed_raw")
-        label = "Последний трек:" if is_last else "Сейчас играет:"
-        lines = [f"☞ <b>{label}</b>", ""]
+        is_smtc = ctx_type in ("smtc", "smtc_raw")
+        is_paused = False
+
+        if is_smtc and not is_dict:
+            status = getattr(track, "_smtc_status", "Playing")
+            is_paused = status == "Paused"
+        elif is_smtc and is_dict:
+            status = track.get("_smtc_status", "Playing")
+            is_paused = status == "Paused"
+
+        if is_last:
+            label = "Последний трек:"
+        elif is_paused:
+            label = "На паузе:"
+        else:
+            label = "Сейчас играет:"
+
+        lines = [f"{'⏸' if is_paused else '▶'} <b>{label}</b>", ""]
         lines.append(f"🎵 <b>{title}</b>")
         lines.append(f"🎤 {artists}")
         if album:
@@ -1066,6 +1252,25 @@ async def _cmd_debug(message) -> None:
         ver = getattr(yandex_music, "__version__", "?")
 
         lines = [f"<b>🔧 Yandex Music Debug</b>\nВерсия: <code>{ver}</code>\n"]
+
+        # ── 0. SMTC (Windows) ──
+        if _check_smtc():
+            try:
+                smtc = await _run_sync(_get_smtc_now_playing)
+                if smtc:
+                    lines.append(f"<b>▶ SMTC:</b> ✅")
+                    lines.append(f"  🎵 {smtc.get('title', '?')}")
+                    lines.append(f"  🎤 {smtc.get('artist', '?')}")
+                    lines.append(f"  Статус: {smtc.get('status', '?')}")
+                    lines.append(f"  App: <code>{smtc.get('app_id', '?')}</code>")
+                else:
+                    lines.append("<b>▶ SMTC:</b> ничего не играет")
+            except Exception as e:
+                lines.append(f"<b>▶ SMTC:</b> ❌ {e}")
+        else:
+            lines.append("<b>▶ SMTC:</b> недоступен (не Windows или нет winrt)")
+
+        lines.append("")
 
         # ── 1. Аккаунт ──
         try:
