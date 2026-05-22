@@ -1040,15 +1040,16 @@ async def _cmd_now(client, message) -> None:
 async def _cmd_debug(message) -> None:
     """Show diagnostic info about yandex-music client."""
     from pyrogram.enums import ParseMode
+    import inspect
 
     try:
         ym = _get_client()
         import yandex_music
         ver = getattr(yandex_music, "__version__", "?")
 
-        # ── ЧАСТЬ 1: диагностика очередей (самое важное) ──
         lines = [f"<b>🔧 Yandex Music Debug</b>\nВерсия: <code>{ver}</code>\n"]
 
+        # ── 1. Проверяем сигнатуру queues_list ──
         ql_method = None
         for qm in ("queues_list", "queuesList", "queues"):
             if hasattr(ym, qm):
@@ -1057,23 +1058,30 @@ async def _cmd_debug(message) -> None:
 
         if ql_method:
             try:
+                sig = inspect.signature(getattr(ym, ql_method))
+                lines.append(f"<b>▶ {ql_method}{sig}</b>")
+            except Exception:
+                lines.append(f"<b>▶ {ql_method}</b> (не удалось получить сигнатуру)")
+
+            # вызываем и показываем результат
+            try:
                 queues = await _run_sync(getattr(ym, ql_method))
+                lines.append(f"  return type: <code>{type(queues).__name__}</code>")
                 if queues:
-                    lines.append(f"<b>▶ Очередей: {len(queues)}</b>")
+                    lines.append(f"  len: {len(queues)}")
                     for qi, q in enumerate(queues[:5]):
                         qid = getattr(q, "id", "?")
                         qctx = getattr(q, "context", None)
                         qtype = getattr(qctx, "type", "?") if qctx else "?"
                         lines.append(f"  [{qi}] id={qid}, ctx={qtype}")
 
-                    # пробуем queue(id) для первой
                     first_qid = getattr(queues[0], "id", None)
                     if first_qid and hasattr(ym, "queue"):
                         try:
                             qd = await _run_sync(ym.queue, first_qid)
                             if qd:
                                 attrs = sorted([a for a in dir(qd) if not a.startswith("_") and not callable(getattr(qd, a, None))])
-                                lines.append(f"\n<b>queue() данные:</b> <code>{', '.join(attrs[:25])}</code>")
+                                lines.append(f"\n  <b>queue() attrs:</b> <code>{', '.join(attrs[:25])}</code>")
                                 for attr in ("track", "current_track", "tracks", "items"):
                                     val = getattr(qd, attr, None)
                                     if val is not None:
@@ -1085,18 +1093,43 @@ async def _cmd_debug(message) -> None:
                                                 i0_attrs = sorted([a for a in dir(i0) if not a.startswith("_") and not callable(getattr(i0, a, None))])[:12]
                                                 lines.append(f"    [0] {i0_type}: {', '.join(i0_attrs)}")
                                         else:
-                                            lines.append(f"  • {attr}: {type(val).__name__} = {str(val)[:60]}")
+                                            lines.append(f"  • {attr}: {type(val).__name__} = {str(val)[:80]}")
                         except Exception as e:
-                            lines.append(f"\nqueue() ошибка: {e}")
+                            lines.append(f"\n  queue() ошибка: {e}")
                 else:
-                    lines.append("<b>▶ Очередей: 0</b>")
-                    lines.append("<i>Музыка не играет или играет в браузере</i>")
+                    lines.append("  result: <code>None or empty</code>")
+                    # пробуем вызвать с параметрами
+                    if ql_method in ("queues_list", "queuesList"):
+                        lines.append("\n  <i>Пробуем queues_list(...):</i>")
+                        for kwargs in [
+                            {"device_id": "desktop"},
+                            {"device": "desktop"},
+                            {"device_id": "default"},
+                            {"without_context": False},
+                        ]:
+                            try:
+                                r = await _run_sync(getattr(ym, ql_method), **kwargs)
+                                lines.append(f"    {kwargs}: {type(r).__name__}" + (f" len={len(r)}" if r else " empty"))
+                                if r:
+                                    break
+                            except TypeError as te:
+                                lines.append(f"    {kwargs}: TypeError ({te})")
+                            except Exception as ex:
+                                lines.append(f"    {kwargs}: {type(ex).__name__} ({str(ex)[:50]})")
             except Exception as e:
-                lines.append(f"<b>▶ queues_list ошибка:</b> {e}")
+                lines.append(f"  ошибка: {type(e).__name__}: {e}")
         else:
-            lines.append("<b>▶ queues_list: метод не найден</b>")
+            lines.append("<b>▶ queues_list:</b> не найден")
 
-        # ── ЧАСТЬ 2: feed ──
+        # ── 2. Проверяем сигнатуру queue() ──
+        if hasattr(ym, "queue"):
+            try:
+                sig = inspect.signature(ym.queue)
+                lines.append(f"\n<b>▶ queue{sig}</b>")
+            except Exception:
+                pass
+
+        # ── 3. Проверяем feed ──
         lines.append("")
         if hasattr(ym, "feed"):
             try:
@@ -1109,18 +1142,27 @@ async def _cmd_debug(message) -> None:
                         total_tracks += len(td)
                     lines.append(f"<b>▶ Feed:</b> {len(gen)} блоков, {total_tracks} треков")
                 else:
-                    lines.append("<b>▶ Feed:</b> пусто")
+                    lines.append("<b>▶ Feed:</b> None")
             except Exception as e:
                 lines.append(f"<b>▶ Feed:</b> ❌ {e}")
         else:
             lines.append("<b>▶ Feed:</b> нет метода")
 
-        # отправляем часть 1
-        text1 = "\n".join(lines)
+        # ── 4. Проверяем_me ──
         try:
-            await message.edit_text(text1, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+            me = ym.me
+            if me:
+                uid = getattr(me, "id", "?")
+                login = getattr(me.account, "login", "?") if hasattr(me, "account") else "?"
+                lines.append(f"\n<b>▶ Аккаунт:</b> id={uid}, login={login}")
+        except Exception as e:
+            lines.append(f"\n<b>▶ Аккаунт:</b> ❌ {e}")
+
+        text = "\n".join(lines)
+        try:
+            await message.edit_text(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
         except Exception:
-            await message.reply(text1, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+            await message.reply(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
     except ValueError as e:
         try:
