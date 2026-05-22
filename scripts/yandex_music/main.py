@@ -838,14 +838,15 @@ def _fetch_ynison_state():
     )
     headers = {
         "Authorization": f"OAuth {token}",
-        "Origin": "https://music.yandex.ru",
-        "Sec-WebSocket-Protocol": (
-            'Bearer, v2, '
-            '{"Ynison-Device-Id": "' + device_id + '", '
-            '"Ynison-Device-Info": {"Platform": "Web", "OsFamily": "Linux", '
-            '"OsVersion": "5.15", "Browser": "Chrome", "Capabilities": "[]"}}'
-        ),
     }
+
+    # Ynison subprotocol — передаётся через websockets subprotocols, не через заголовки
+    ynison_protocol = (
+        'Bearer, v2, '
+        '{"Ynison-Device-Id": "' + device_id + '", '
+        '"Ynison-Device-Info": {"Platform": "Web", "OsFamily": "Linux", '
+        '"OsVersion": "5.15", "Browser": "Chrome", "Capabilities": "[]"}}'
+    )
 
     try:
         import websockets
@@ -858,7 +859,12 @@ def _fetch_ynison_state():
             # ── Step 1: Redirector ──
             try:
                 async with websockets.connect(
-                    redirector_url, extra_headers=headers, ping_interval=None, close_timeout=5,
+                    redirector_url,
+                    additional_headers=headers,
+                    subprotocols=[ynison_protocol],
+                    origin="https://music.yandex.ru",
+                    compression=None,
+                    ping_interval=None, close_timeout=5,
                 ) as ws:
                     redirect_msg = await asyncio.wait_for(ws.recv(), timeout=10)
                     log.debug("Ynison redirector response: %s", redirect_msg[:300] if redirect_msg else "empty")
@@ -901,7 +907,12 @@ def _fetch_ynison_state():
 
             try:
                 async with websockets.connect(
-                    state_url, extra_headers=headers, ping_interval=None, close_timeout=5,
+                    state_url,
+                    additional_headers=headers,
+                    subprotocols=[ynison_protocol],
+                    origin="https://music.yandex.ru",
+                    compression=None,
+                    ping_interval=None, close_timeout=5,
                 ) as ws:
                     # Отправляем update_full_state чтобы зарегистрироваться и получить state
                     init_msg = json.dumps({
