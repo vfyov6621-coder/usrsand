@@ -234,9 +234,9 @@ async def _cmd_help(message) -> None:
         "<code>.ya now</code> \u2014 что сейчас играет\n"
         "<code>.ya debug</code> \u2014 диагностика API\n"
         "<code>.ya token</code> <i>токен</i> \u2014 установить токен\n\n"
-        "<i>Получить токен (с доступом к очередям): </i>\n"
-        '<a href="https://oauth.yandex.ru/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d&scope=play-listen">'
-        "OAuth (play-listen)</a>"
+        "<i>Получить токен: </i>"
+        '<a href="https://oauth.yandex.ru/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d">'
+        "OAuth авторизация</a>"
     )
     try:
         await message.edit_text(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
@@ -1155,12 +1155,9 @@ async def _cmd_token(message) -> None:
         try:
             await message.edit_text(
                 "\u274c Использование: <code>.ya token YOUR_TOKEN</code>\n\n"
-                '<i>Получить токен (с доступом к очередям):</i>\n'
-                '<a href="https://oauth.yandex.ru/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d&scope=play-listen">'
-                "OAuth (play-listen)</a>\n\n"
-                "<i>Без очередей (только базовый):</i>\n"
+                '<i>Получить токен: </i>\n'
                 '<a href="https://oauth.yandex.ru/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d">'
-                "OAuth (basic)</a>",
+                "OAuth авторизация</a>",
                 parse_mode=ParseMode.HTML,
                 disable_web_page_preview=True,
             )
