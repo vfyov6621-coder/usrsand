@@ -813,6 +813,11 @@ def _fetch_ynison_state():
       1. Connect to redirector → get ticket + target host
       2. Connect to state service → send update_full_state → receive player state
 
+    Uses raw asyncio + ssl instead of 'websockets' library because the
+    Ynison Sec-WebSocket-Protocol value contains JSON which fails RFC 6455
+    validation (commas, braces) and the library rejects both the request
+    and the server's echoed subprotocol.
+
     Returns dict with:
       - playable_id: str ("track:ID:album:ID")
       - progress_ms: int | None
@@ -823,7 +828,9 @@ def _fetch_ynison_state():
       - album_id: int (extracted from playable_id)
     or None on failure.
     """
-    import requests as http_lib
+    import ssl as _ssl
+    import hashlib
+    import base64
 
     token = _get_token()
     if not token:
@@ -831,50 +838,141 @@ def _fetch_ynison_state():
 
     device_id = str(uuid.uuid4())
 
-    # ── Step 1: Connect to redirector to get the actual Ynison host ──
-    redirector_url = (
-        "wss://ynison.music.yandex.ru"
-        "/redirector.YnisonRedirectService/GetRedirectToYnison"
+    ynison_protocol = (
+        'Bearer, v2, '
+        '{"Ynison-Device-Id": "' + device_id + '", '
+        '"Ynison-Device-Info": {"Platform": "Web", "OsFamily": "Linux", '
+        '"OsVersion": "5.15", "Browser": "Chrome", "Capabilities": "[]"}}'
     )
-    headers = {
-        "Authorization": f"OAuth {token}",
-        "Sec-WebSocket-Protocol": (
-            'Bearer, v2, '
-            '{"Ynison-Device-Id": "' + device_id + '", '
-            '"Ynison-Device-Info": {"Platform": "Web", "OsFamily": "Linux", '
-            '"OsVersion": "5.15", "Browser": "Chrome", "Capabilities": "[]"}}'
-        ),
-    }
 
     try:
-        import websockets
-    except ImportError:
-        log.warning("websockets not installed, Ynison unavailable")
-        return None
+        async def _ws_handshake(host, path, port=443):
+            """Perform raw WebSocket handshake, return (reader, writer)."""
+            ssl_ctx = _ssl.create_default_context()
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(host, port, ssl=ssl_ctx),
+                timeout=10,
+            )
+            # Generate WebSocket key
+            ws_key = base64.b64encode(hashlib.sha1(
+                str(uuid.uuid4()).encode()
+            ).digest()).decode()[:24]
+            request = (
+                f"GET {path} HTTP/1.1\r\n"
+                f"Host: {host}\r\n"
+                f"Upgrade: websocket\r\n"
+                f"Connection: Upgrade\r\n"
+                f"Sec-WebSocket-Key: {ws_key}\r\n"
+                f"Sec-WebSocket-Version: 13\r\n"
+                f"Sec-WebSocket-Protocol: {ynison_protocol}\r\n"
+                f"Authorization: OAuth {token}\r\n"
+                f"Origin: https://music.yandex.ru\r\n"
+                f"\r\n"
+            )
+            writer.write(request.encode())
+            await writer.drain()
 
-    try:
+            # Read HTTP response
+            response_data = b""
+            while b"\r\n\r\n" not in response_data:
+                chunk = await asyncio.wait_for(reader.read(4096), timeout=10)
+                if not chunk:
+                    break
+                response_data += chunk
+
+            response_str = response_data.decode("utf-8", errors="replace")
+            if "101" not in response_str.split("\r\n")[0]:
+                log.warning("Ynison: handshake failed, got: %s",
+                            response_str.split("\r\n")[0])
+                writer.close()
+                return None, None
+
+            return reader, writer
+
+        async def _ws_recv_text(reader):
+            """Read one WebSocket text frame."""
+            # Read first 2 bytes (opcode + length)
+            header = await asyncio.wait_for(reader.read(2), timeout=10)
+            if len(header) < 2:
+                return None
+            opcode = header[0] & 0x0F
+            masked = (header[1] >> 7) & 1
+            length = header[1] & 0x7F
+
+            # Extended length
+            if length == 126:
+                ext = await asyncio.wait_for(reader.read(2), timeout=10)
+                length = int.from_bytes(ext, "big")
+            elif length == 127:
+                ext = await asyncio.wait_for(reader.read(8), timeout=10)
+                length = int.from_bytes(ext, "big")
+
+            # Masking key (server→client frames should NOT be masked, but read anyway)
+            mask_key = None
+            if masked:
+                mask_key = await asyncio.wait_for(reader.read(4), timeout=10)
+
+            # Payload
+            payload = b""
+            while len(payload) < length:
+                chunk = await asyncio.wait_for(
+                    reader.read(min(length - len(payload), 8192)), timeout=10,
+                )
+                if not chunk:
+                    break
+                payload += chunk
+
+            # Unmask if needed
+            if mask_key:
+                payload = bytes(b ^ mask_key[i % 4] for i, b in enumerate(payload))
+
+            if opcode == 8:  # Close frame
+                return None
+            if opcode == 9:  # Ping — ignore
+                return await _ws_recv_text(reader)
+            return payload.decode("utf-8", errors="replace")
+
+        async def _ws_send_text(writer, text):
+            """Send one WebSocket text frame (masked, as required by client)."""
+            data = text.encode("utf-8")
+            length = len(data)
+            mask_key = b"\xab\xcd\xef\x01"
+
+            if length < 126:
+                frame = bytes([0x81, 0x80 | length]) + mask_key
+            elif length < 65536:
+                frame = bytes([0x81, 0x80 | 126]) + length.to_bytes(2, "big") + mask_key
+            else:
+                frame = bytes([0x81, 0x80 | 127]) + length.to_bytes(8, "big") + mask_key
+
+            masked_data = bytes(b ^ mask_key[i % 4] for i, b in enumerate(data))
+            writer.write(frame + masked_data)
+            await writer.drain()
+
         async def _ynison_connect():
             # ── Step 1: Redirector ──
             try:
-                async with websockets.connect(
-                    redirector_url,
-                    additional_headers=headers,
-                    origin="https://music.yandex.ru",
-                    compression=None,
-                    ping_interval=None, close_timeout=5,
-                ) as ws:
-                    redirect_msg = await asyncio.wait_for(ws.recv(), timeout=10)
-                    log.debug("Ynison redirector response: %s", redirect_msg[:300] if redirect_msg else "empty")
+                reader, writer = await _ws_handshake(
+                    "ynison.music.yandex.ru",
+                    "/redirector.YnisonRedirectService/GetRedirectToYnison",
+                )
+                if not reader:
+                    return None
+                redirect_msg = await _ws_recv_text(reader)
+                log.debug("Ynison redirector response: %s",
+                          redirect_msg[:300] if redirect_msg else "empty")
+                writer.close()
             except Exception as e:
                 log.warning("Ynison redirector failed: %s", e)
                 return None
 
-            # Парсим ответ редиректора — он содержит ticket и host
-            # Формат: JSON-подобная строка с target_host и ticket
+            if not redirect_msg:
+                return None
+
+            # Парсим ответ редиректора — ticket и host
             target_host = None
             ticket = None
 
-            # Пробуем распарсить как JSON
             try:
                 data = json.loads(redirect_msg)
                 target_host = data.get("host") or data.get("targetHost") or data.get("target_host")
@@ -882,10 +980,8 @@ def _fetch_ynison_state():
             except (json.JSONDecodeError, TypeError):
                 pass
 
-            # Альтернативный парсинг — иногда ответ в другом формате
             if not target_host or not ticket:
                 import re
-                # ищем паттерны в строке ответа
                 host_match = re.search(r'"host"\s*:\s*"([^"]+)"', redirect_msg)
                 ticket_match = re.search(r'"ticket"\s*:\s*"([^"]+)"', redirect_msg)
                 if host_match:
@@ -900,41 +996,39 @@ def _fetch_ynison_state():
             log.info("Ynison redirector: host=%s", target_host)
 
             # ── Step 2: Connect to state service ──
-            state_url = f"wss://{target_host}/ynison_state.YnisonStateService/PutYnisonState"
-
             try:
-                async with websockets.connect(
-                    state_url,
-                    additional_headers=headers,
-                    origin="https://music.yandex.ru",
-                    compression=None,
-                    ping_interval=None, close_timeout=5,
-                ) as ws:
-                    # Отправляем update_full_state чтобы зарегистрироваться и получить state
-                    init_msg = json.dumps({
-                        "updates": [{
-                            "update_full_state": {
-                                "player_state": {
-                                    "status": {"paused": True},
-                                    "player_queue": {},
-                                },
-                                "device_info": {
-                                    "device_id": device_id,
-                                    "capabilities": [],
-                                    "type": "WEB",
-                                    "app_name": "sandusr",
-                                },
-                            }
-                        }],
-                        "ticket": ticket,
-                    })
-                    await ws.send(init_msg)
+                reader, writer = await _ws_handshake(
+                    target_host,
+                    "/ynison_state.YnisonStateService/PutYnisonState",
+                )
+                if not reader:
+                    return None
 
-                    # Жём ответ — должны получить полный player state
-                    response = await asyncio.wait_for(ws.recv(), timeout=10)
-                    log.debug("Ynison state response: %s", response[:500] if response else "empty")
+                init_msg = json.dumps({
+                    "updates": [{
+                        "update_full_state": {
+                            "player_state": {
+                                "status": {"paused": True},
+                                "player_queue": {},
+                            },
+                            "device_info": {
+                                "device_id": device_id,
+                                "capabilities": [],
+                                "type": "WEB",
+                                "app_name": "sandusr",
+                            },
+                        }
+                    }],
+                    "ticket": ticket,
+                })
+                await _ws_send_text(writer, init_msg)
 
-                    return response
+                response = await _ws_recv_text(reader)
+                log.debug("Ynison state response: %s",
+                          response[:500] if response else "empty")
+                writer.close()
+
+                return response
 
             except Exception as e:
                 log.warning("Ynison state service failed: %s", e)
