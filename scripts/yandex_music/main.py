@@ -965,8 +965,7 @@ def _fetch_ynison_state():
                 if not reader:
                     return None
                 redirect_msg = await _ws_recv_text(reader)
-                log.debug("Ynison redirector response: %s",
-                          redirect_msg[:300] if redirect_msg else "empty")
+                log.info("Ynison redirector response: %s", redirect_msg[:500] if redirect_msg else "empty")
                 writer.close()
             except Exception as e:
                 log.warning("Ynison redirector failed: %s", e)
@@ -1004,7 +1003,7 @@ def _fetch_ynison_state():
                 log.warning("Ynison: could not parse redirector response: %s", redirect_msg[:200])
                 return None
 
-            log.info("Ynison redirector: host=%s, session_id=%s", target_host, session_id)
+            log.info("Ynison redirector: host=%s, ticket=%s, session_id=%s", target_host, redirect_ticket, session_id)
 
             # ── Step 2: Connect to state service (with ticket + session_id in header) ──
             try:
@@ -1012,12 +1011,14 @@ def _fetch_ynison_state():
                     **{"Ynison-Redirect-Ticket": str(redirect_ticket)},
                     **({"Ynison-Session-Id": str(session_id)} if session_id else {}),
                 )
+                log.info("Ynison state protocol header: %s", state_proto[:200])
                 reader, writer = await _ws_handshake(
                     target_host,
                     "/ynison_state.YnisonStateService/PutYnisonState",
                     protocol=state_proto,
                 )
                 if not reader:
+                    log.warning("Ynison: state service handshake returned None")
                     return None
 
                 init_msg = json.dumps({
@@ -1040,8 +1041,8 @@ def _fetch_ynison_state():
                 await _ws_send_text(writer, init_msg)
 
                 response = await _ws_recv_text(reader)
-                log.debug("Ynison state response: %s",
-                          response[:500] if response else "empty")
+                log.info("Ynison state response: %s",
+                         response[:500] if response else "empty")
                 writer.close()
 
                 return response
