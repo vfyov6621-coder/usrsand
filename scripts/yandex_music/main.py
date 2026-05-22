@@ -234,9 +234,9 @@ async def _cmd_help(message) -> None:
         "<code>.ya now</code> \u2014 что сейчас играет\n"
         "<code>.ya debug</code> \u2014 диагностика API\n"
         "<code>.ya token</code> <i>токен</i> \u2014 установить токен\n\n"
-        "<i>Получить токен: </i>"
-        '<a href="https://oauth.yandex.ru/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d">'
-        "OAuth авторизация</a>"
+        "<i>Получить токен (с доступом к очередям): </i>\n"
+        '<a href="https://oauth.yandex.ru/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d&scope=play-listen">'
+        "OAuth (play-listen)</a>"
     )
     try:
         await message.edit_text(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
@@ -1068,26 +1068,30 @@ async def _cmd_debug(message) -> None:
         except Exception as e:
             lines.append(f"<b>▶ Аккаунт:</b> ❌ {e}")
 
-        # ── 2. Raw API calls ──
+        # ── 2. Raw API calls (прямой HTTP через requests) ──
         lines.append("")
-        req = getattr(ym, "_request", None) or getattr(ym, "request", None)
-        if req and hasattr(req, "get"):
+        try:
+            import requests as http_lib
+            token = _get_token()
+            base = "https://api.music.yandex.net"
+            headers = {"Authorization": f"OAuth {token}"}
             for endpoint in ("/queues", "/player/state", "/feed"):
                 try:
-                    r = await _run_sync(req.get, endpoint)
-                    if r is None:
-                        lines.append(f"<b>▶ GET {endpoint}:</b> None")
-                    elif isinstance(r, dict):
-                        preview = json.dumps(r, ensure_ascii=False, default=str)[:200]
-                        lines.append(f"<b>▶ GET {endpoint}:</b> dict, {len(r)} keys\n  <code>{preview}</code>")
-                    elif isinstance(r, list):
-                        lines.append(f"<b>▶ GET {endpoint}:</b> list[{len(r)}]")
+                    resp = await _run_sync(http_lib.get, f"{base}{endpoint}", headers=headers, timeout=5)
+                    data = resp.json() if resp.status_code == 200 else {"error": resp.status_code}
+                    if isinstance(data, dict):
+                        preview = json.dumps(data, ensure_ascii=False)[:250]
+                        lines.append(f"<b>▶ GET {endpoint}:</b> {resp.status_code}\n  <code>{preview}</code>")
+                    elif isinstance(data, list):
+                        lines.append(f"<b>▶ GET {endpoint}:</b> {resp.status_code}, list[{len(data)}]")
                     else:
-                        lines.append(f"<b>▶ GET {endpoint}:</b> {type(r).__name__}: {str(r)[:100]}")
+                        lines.append(f"<b>▶ GET {endpoint}:</b> {resp.status_code}")
                 except Exception as e:
                     lines.append(f"<b>▶ GET {endpoint}:</b> ❌ {type(e).__name__}: {str(e)[:80]}")
-        else:
-            lines.append("<b>▶ Raw API:</b> нет _request")
+        except ImportError:
+            lines.append("<b>▶ Raw API:</b> requests не установлен")
+        except Exception as e:
+            lines.append(f"<b>▶ Raw API:</b> ❌ {e}")
 
         # ── 3. queues_list через библиотеку ──
         lines.append("")
@@ -1151,9 +1155,12 @@ async def _cmd_token(message) -> None:
         try:
             await message.edit_text(
                 "\u274c Использование: <code>.ya token YOUR_TOKEN</code>\n\n"
-                '<i>Получить токен: </i>'
+                '<i>Получить токен (с доступом к очередям):</i>\n'
+                '<a href="https://oauth.yandex.ru/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d&scope=play-listen">'
+                "OAuth (play-listen)</a>\n\n"
+                "<i>Без очередей (только базовый):</i>\n"
                 '<a href="https://oauth.yandex.ru/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d">'
-                "OAuth авторизация</a>",
+                "OAuth (basic)</a>",
                 parse_mode=ParseMode.HTML,
                 disable_web_page_preview=True,
             )
