@@ -838,15 +838,13 @@ def _fetch_ynison_state():
     )
     headers = {
         "Authorization": f"OAuth {token}",
+        "Sec-WebSocket-Protocol": (
+            'Bearer, v2, '
+            '{"Ynison-Device-Id": "' + device_id + '", '
+            '"Ynison-Device-Info": {"Platform": "Web", "OsFamily": "Linux", '
+            '"OsVersion": "5.15", "Browser": "Chrome", "Capabilities": "[]"}}'
+        ),
     }
-
-    # Ynison subprotocol — передаётся через websockets subprotocols, не через заголовки
-    ynison_protocol = (
-        'Bearer, v2, '
-        '{"Ynison-Device-Id": "' + device_id + '", '
-        '"Ynison-Device-Info": {"Platform": "Web", "OsFamily": "Linux", '
-        '"OsVersion": "5.15", "Browser": "Chrome", "Capabilities": "[]"}}'
-    )
 
     try:
         import websockets
@@ -861,7 +859,6 @@ def _fetch_ynison_state():
                 async with websockets.connect(
                     redirector_url,
                     additional_headers=headers,
-                    subprotocols=[ynison_protocol],
                     origin="https://music.yandex.ru",
                     compression=None,
                     ping_interval=None, close_timeout=5,
@@ -909,7 +906,6 @@ def _fetch_ynison_state():
                 async with websockets.connect(
                     state_url,
                     additional_headers=headers,
-                    subprotocols=[ynison_protocol],
                     origin="https://music.yandex.ru",
                     compression=None,
                     ping_interval=None, close_timeout=5,
