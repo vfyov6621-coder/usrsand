@@ -41,12 +41,27 @@ from config import Config
 from loader import load_all_scripts, load_script, unload_script, reload_script, get_script_info, get_loaded_names, get_available
 from web import app, set_bot_status, set_loaded_scripts, add_log, set_pyro_client
 
-# Simple logging
+# Simple logging — console + file
+log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+os.makedirs(log_dir, exist_ok=True)
+
+log_format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+date_format = "%Y-%m-%d %H:%M:%S"
+
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    format=log_format,
+    datefmt=date_format,
 )
 logger = logging.getLogger("sandusr")
+
+# Add file handler — logs/DEBUG.log (all levels)
+_file_handler = logging.FileHandler(
+    os.path.join(log_dir, "DEBUG.log"), mode="a", encoding="utf-8",
+)
+_file_handler.setLevel(logging.DEBUG)
+_file_handler.setFormatter(logging.Formatter(log_format, datefmt=date_format))
+logging.getLogger().addHandler(_file_handler)
 
 VERSION = Config.VERSION
 BOT_NAME = "sandusr"

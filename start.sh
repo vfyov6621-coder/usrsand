@@ -1,8 +1,10 @@
 #!/bin/bash
 # sandusr v3.0 — запуск с логами
+#
+# Лог-файл: logs/log_DD_MM_HH-MM-SS.txt
 
 mkdir -p logs
-LOGFILE="logs/sandusr_$(date +%Y-%m-%d_%H-%M).log"
+LOGFILE="logs/log_$(date +%d_%m_%H-%M-%S).txt"
 
 echo ""
 echo "  ╔══════════════════════════════════════╗"
@@ -10,8 +12,7 @@ echo "  ║          sandusr v3.0               ║"
 echo "  ║     Telegram Userbot                ║"
 echo "  ╚══════════════════════════════════════╝"
 echo ""
-echo "  [INFO] Log: $LOGFILE"
-echo "  [INFO] Starting..."
+echo "  [LOG] $LOGFILE"
 echo ""
 
 python3 main.py 2>&1 | tee "$LOGFILE"
