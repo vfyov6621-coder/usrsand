@@ -8,8 +8,6 @@ import logging
 import asyncio
 import tempfile
 import shutil
-import uuid
-import time
 from pathlib import Path
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -45,13 +43,7 @@ def _get_client():
     if not token:
         raise ValueError("Токен не установлен. Используй .ya token <токен>")
     from yandex_music import Client
-    client = Client(token)
-    # увеличиваем таймаут — дефолтный слишком короткий (2-5с), API Яндекса медленный
-    if hasattr(client, "_request") and hasattr(client._request, "timeout"):
-        client._request.timeout = 30
-    elif hasattr(client, "request") and hasattr(client.request, "timeout"):
-        client.request.timeout = 30
-    _yandex_client = client.init()
+    _yandex_client = Client(token).init()
     return _yandex_client
 
 
@@ -805,614 +797,44 @@ async def _generate_now_cover(cover_uri: str) -> str | None:
         return None
 
 
-def _fetch_ynison_state():
-    """Connect to Ynison WebSocket and fetch player state.
-
-    Based on https://github.com/FozerG/YandexMusicRPC approach.
-    Two-step WebSocket handshake:
-      1. Connect to redirector → get ticket + target host
-      2. Connect to state service → send update_full_state → receive player state
-
-    Uses raw asyncio + ssl instead of 'websockets' library because the
-    Ynison Sec-WebSocket-Protocol value contains JSON which fails RFC 6455
-    validation (commas, braces) and the library rejects both the request
-    and the server's echoed subprotocol.
-
-    Returns dict with:
-      - playable_id: str ("track:ID:album:ID")
-      - progress_ms: int | None
-      - duration_ms: int | None
-      - paused: bool
-      - device_name: str | None
-      - track_id: int (extracted from playable_id)
-      - album_id: int (extracted from playable_id)
-    or None on failure.
-    """
-    import ssl as _ssl
-    import hashlib
-    import base64
-
-    token = _get_token()
-    if not token:
-        return None
-
-    device_id = uuid.uuid4().hex[:16]
-    device_info_str = json.dumps({"app_name": "Chrome", "type": 1})  # double-encoded
-
-    def _build_proto(**extra):
-        """Build Ynison Sec-WebSocket-Protocol header value.
-
-        Ynison-Device-Info must be a JSON-serialized string (not nested object),
-        resulting in double-encoded JSON when embedded in the outer object.
-        """
-        proto_obj = {"Ynison-Device-Id": device_id, "Ynison-Device-Info": device_info_str}
-        proto_obj.update(extra)
-        return 'Bearer, v2, ' + json.dumps(proto_obj, separators=(',', ':'))
-
-    try:
-        async def _ws_handshake(host, path, port=443, protocol=None):
-            """Perform raw WebSocket handshake, return (reader, writer)."""
-            if not protocol:
-                protocol = _build_proto()
-            ssl_ctx = _ssl.create_default_context()
-            reader, writer = await asyncio.wait_for(
-                asyncio.open_connection(host, port, ssl=ssl_ctx),
-                timeout=10,
-            )
-            # Generate WebSocket key
-            ws_key = base64.b64encode(hashlib.sha1(
-                str(uuid.uuid4()).encode()
-            ).digest()).decode()[:24]
-            request = (
-                f"GET {path} HTTP/1.1\r\n"
-                f"Host: {host}\r\n"
-                f"Upgrade: websocket\r\n"
-                f"Connection: Upgrade\r\n"
-                f"Sec-WebSocket-Key: {ws_key}\r\n"
-                f"Sec-WebSocket-Version: 13\r\n"
-                f"Sec-WebSocket-Protocol: {protocol}\r\n"
-                f"Authorization: OAuth {token}\r\n"
-                f"Origin: https://music.yandex.ru\r\n"
-                f"\r\n"
-            )
-            writer.write(request.encode())
-            await writer.drain()
-
-            # Read HTTP response
-            response_data = b""
-            while b"\r\n\r\n" not in response_data:
-                chunk = await asyncio.wait_for(reader.read(4096), timeout=10)
-                if not chunk:
-                    break
-                response_data += chunk
-
-            response_str = response_data.decode("utf-8", errors="replace")
-            if "101" not in response_str.split("\r\n")[0]:
-                log.warning("Ynison: handshake failed, got: %s",
-                            response_str.split("\r\n")[0])
-                writer.close()
-                return None, None
-
-            return reader, writer
-
-        async def _ws_recv_text(reader):
-            """Read one WebSocket text frame."""
-            # Read first 2 bytes (opcode + length)
-            header = await asyncio.wait_for(reader.read(2), timeout=10)
-            if len(header) < 2:
-                return None
-            opcode = header[0] & 0x0F
-            masked = (header[1] >> 7) & 1
-            length = header[1] & 0x7F
-
-            # Extended length
-            if length == 126:
-                ext = await asyncio.wait_for(reader.read(2), timeout=10)
-                length = int.from_bytes(ext, "big")
-            elif length == 127:
-                ext = await asyncio.wait_for(reader.read(8), timeout=10)
-                length = int.from_bytes(ext, "big")
-
-            # Masking key (server→client frames should NOT be masked, but read anyway)
-            mask_key = None
-            if masked:
-                mask_key = await asyncio.wait_for(reader.read(4), timeout=10)
-
-            # Payload
-            payload = b""
-            while len(payload) < length:
-                chunk = await asyncio.wait_for(
-                    reader.read(min(length - len(payload), 8192)), timeout=10,
-                )
-                if not chunk:
-                    break
-                payload += chunk
-
-            # Unmask if needed
-            if mask_key:
-                payload = bytes(b ^ mask_key[i % 4] for i, b in enumerate(payload))
-
-            if opcode == 8:  # Close frame
-                return None
-            if opcode == 9:  # Ping — ignore
-                return await _ws_recv_text(reader)
-            return payload.decode("utf-8", errors="replace")
-
-        async def _ws_send_text(writer, text):
-            """Send one WebSocket text frame (masked, as required by client)."""
-            data = text.encode("utf-8")
-            length = len(data)
-            mask_key = b"\xab\xcd\xef\x01"
-
-            if length < 126:
-                frame = bytes([0x81, 0x80 | length]) + mask_key
-            elif length < 65536:
-                frame = bytes([0x81, 0x80 | 126]) + length.to_bytes(2, "big") + mask_key
-            else:
-                frame = bytes([0x81, 0x80 | 127]) + length.to_bytes(8, "big") + mask_key
-
-            masked_data = bytes(b ^ mask_key[i % 4] for i, b in enumerate(data))
-            writer.write(frame + masked_data)
-            await writer.drain()
-
-        async def _ynison_connect():
-            # ── Step 1: Redirector ──
-            try:
-                reader, writer = await _ws_handshake(
-                    "ynison.music.yandex.ru",
-                    "/redirector.YnisonRedirectService/GetRedirectToYnison",
-                )
-                if not reader:
-                    return None
-                redirect_msg = await _ws_recv_text(reader)
-                log.info("Ynison redirector response: %s", redirect_msg[:500] if redirect_msg else "empty")
-                writer.close()
-            except Exception as e:
-                log.warning("Ynison redirector failed: %s", e)
-                return None
-
-            if not redirect_msg:
-                return None
-
-            # Парсим ответ редиректора — host, redirect_ticket, session_id
-            target_host = None
-            redirect_ticket = None
-            session_id = None
-
-            try:
-                data = json.loads(redirect_msg)
-                target_host = data.get("host") or data.get("targetHost") or data.get("target_host")
-                redirect_ticket = data.get("redirect_ticket") or data.get("ticket")
-                session_id = data.get("session_id")
-            except (json.JSONDecodeError, TypeError):
-                pass
-
-            if not target_host or not redirect_ticket:
-                import re
-                host_match = re.search(r'"host"\s*:\s*"([^"]+)"', redirect_msg)
-                ticket_match = re.search(r'"(?:redirect_)?ticket"\s*:\s*"?([^"\s,}]+)', redirect_msg)
-                session_match = re.search(r'"session_id"\s*:\s*(\d+)', redirect_msg)
-                if host_match:
-                    target_host = host_match.group(1)
-                if ticket_match:
-                    redirect_ticket = ticket_match.group(1)
-                if session_match:
-                    session_id = session_match.group(1)
-
-            if not target_host or not redirect_ticket:
-                log.warning("Ynison: could not parse redirector response: %s", redirect_msg[:200])
-                return None
-
-            log.info("Ynison redirector: host=%s, ticket=%s, session_id=%s", target_host, redirect_ticket, session_id)
-
-            # ── Step 2: Connect to state service (with ticket + session_id in header) ──
-            try:
-                state_proto = _build_proto(
-                    **{"Ynison-Redirect-Ticket": str(redirect_ticket)},
-                    **({"Ynison-Session-Id": str(session_id)} if session_id else {}),
-                )
-                log.info("Ynison state protocol header: %s", state_proto[:200])
-                reader, writer = await _ws_handshake(
-                    target_host,
-                    "/ynison_state.YnisonStateService/PutYnisonState",
-                    protocol=state_proto,
-                )
-                if not reader:
-                    log.warning("Ynison: state service handshake returned None")
-                    return None
-
-                init_msg = json.dumps({
-                    "updates": [{
-                        "update_full_state": {
-                            "player_state": {
-                                "status": {"paused": True},
-                                "player_queue": {},
-                            },
-                            "device_info": {
-                                "device_id": device_id,
-                                "capabilities": [],
-                                "type": 1,
-                                "app_name": "sandusr",
-                            },
-                        }
-                    }],
-                    "ticket": redirect_ticket,
-                })
-                await _ws_send_text(writer, init_msg)
-
-                response = await _ws_recv_text(reader)
-                log.info("Ynison state response: %s",
-                         response[:500] if response else "empty")
-                writer.close()
-
-                return response
-
-            except Exception as e:
-                log.warning("Ynison state service failed: %s", e)
-                return None
-
-        # Запускаем async код в новом event loop (мы в sync контексте)
-        loop = asyncio.new_event_loop()
-        try:
-            response = loop.run_until_complete(_ynison_connect())
-        finally:
-            loop.close()
-
-        if not response:
-            return None
-
-        # Парсим player state
-        result = {}
-        try:
-            data = json.loads(response)
-        except (json.JSONDecodeError, TypeError):
-            log.warning("Ynison: invalid JSON response")
-            return None
-
-        # Извлекаем player_state из ответа
-        player_state = None
-        if isinstance(data, dict):
-            # Формат: {"updates": [{"update_full_state": {"player_state": ...}}]}
-            updates = data.get("updates", [])
-            for u in updates:
-                full = u.get("update_full_state", {})
-                if full:
-                    player_state = full.get("player_state")
-                    if not player_state:
-                        # Может быть сразу в корне
-                        player_state = full
-                    break
-
-            # Альтернативный формат
-            if not player_state:
-                player_state = data.get("player_state")
-
-        if not player_state or not isinstance(player_state, dict):
-            log.debug("Ynison: no player_state in response")
-            return None
-
-        # Извлекаем данные о текущем треке
-        pq = player_state.get("player_queue", {})
-        playable_list = pq.get("playable_list", [])
-        current_idx = pq.get("current_playable_index", 0)
-
-        if not playable_list or current_idx >= len(playable_list):
-            log.debug("Ynison: empty playable_list or invalid index")
-            return None
-
-        playable = playable_list[current_idx]
-        playable_id = playable.get("playable_id", "")
-
-        # Парсим playable_id: "track:12345:album:67890"
-        track_id = None
-        album_id = None
-        parts = playable_id.split(":")
-        for i, p in enumerate(parts):
-            if p == "track" and i + 1 < len(parts):
-                try:
-                    track_id = int(parts[i + 1])
-                except ValueError:
-                    pass
-            if p == "album" and i + 1 < len(parts):
-                try:
-                    album_id = int(parts[i + 1])
-                except ValueError:
-                    pass
-
-        status = player_state.get("status", {})
-        progress_ms = status.get("progress_ms")
-        duration_ms = status.get("duration_ms")
-        paused = status.get("paused", True)
-
-        # Информация об устройстве
-        devices = data.get("devices", []) if isinstance(data, dict) else []
-        active_device_id = data.get("active_device_id_optional")
-        device_name = None
-        for d in devices:
-            if d.get("device_id") == active_device_id:
-                device_name = d.get("device_name") or d.get("app_name")
-                break
-
-        result = {
-            "playable_id": playable_id,
-            "progress_ms": progress_ms,
-            "duration_ms": duration_ms,
-            "paused": paused,
-            "device_name": device_name,
-            "track_id": track_id,
-            "album_id": album_id,
-        }
-
-        if not track_id:
-            log.debug("Ynison: could not extract track_id from playable_id=%s", playable_id)
-            return None
-
-        return result
-
-    except Exception as e:
-        log.warning("Ynison error: %s", e, exc_info=True)
-        return None
-
-
-def _fetch_now_playing_raw():
-    """Fetch now playing via raw HTTP API (bypasses library timeout issues).
-    Returns (track_dict, context_type) or (None, None).
-    track_dict is a raw JSON dict with track info.
-    """
-    import requests as http_lib
-    token = _get_token()
-    base = "https://api.music.yandex.net"
-    headers = {"Authorization": f"OAuth {token}"}
-
-    # ── 1. /queues ──
-    try:
-        r = http_lib.get(f"{base}/queues", headers=headers, timeout=15)
-        if r.status_code == 200:
-            data = r.json()
-            # ответ может быть обёрнут в {"result": [...]} или прямым списком
-            queues = data if isinstance(data, list) else data.get("result", data.get("queues", []))
-            if queues:
-                q = queues[0] if isinstance(queues, list) else None
-                if q:
-                    qid = q.get("id") or q.get("queueId")
-                    if qid:
-                        r2 = http_lib.get(f"{base}/queues/{qid}", headers=headers, timeout=15)
-                        if r2.status_code == 200:
-                            qd = r2.json()
-                            result = qd if isinstance(qd, dict) else qd.get("result", {})
-                            if isinstance(result, dict):
-                                track = result.get("track")
-                                if track:
-                                    return track, "queue_raw"
-    except Exception as e:
-        log.warning("raw /queues failed: %s", e)
-
-    # ── 2. /feed — фид с последними треками ──
-    try:
-        r = http_lib.get(f"{base}/feed", headers=headers, timeout=15)
-        if r.status_code == 200:
-            data = r.json()
-            result = data.get("result", data) if isinstance(data, dict) else {}
-            generated = result.get("generated", [])
-            for g in (generated[:5] if generated else []):
-                tracks_data = g.get("tracks", [])
-                for td in tracks_data:
-                    track = td.get("track") if isinstance(td, dict) else None
-                    if track:
-                        return track, "feed_raw"
-    except Exception as e:
-        log.warning("raw /feed failed: %s", e)
-
-    return None, None
-
-
-# ───────────────────── Ynison WebSocket (YandexMusicRPC approach) ─────────────────────
-# Использует Ynison — протокол WebSocket Яндекса для получения состояния плеера.
-# Работает с любого сервера/VPS, не требует Windows или десктопного приложения.
-# Подключается к wss://ynison.music.yandex.ru, получает полный state плеера
-# (включая текущий трек, прогресс, устройства).
-
-_smtc_available = None  # кешируем результат проверки
-
-
-def _check_smtc() -> bool:
-    """Check if Windows SMTC is available on this platform."""
-    global _smtc_available
-    if _smtc_available is not None:
-        return _smtc_available
-    try:
-        import platform
-        if platform.system() != "Windows":
-            _smtc_available = False
-            return False
-        from winrt.windows.media.control import GlobalSystemMediaTransportControlsSessionManager as GSMTC
-        _smtc_available = True
-        return True
-    except ImportError:
-        _smtc_available = False
-        return False
-    except Exception:
-        _smtc_available = False
-        return False
-
-
-def _get_smtc_now_playing() -> dict | None:
-    """Get currently playing track from Windows System Media Transport Controls.
-
-    Returns dict with keys: title, artist, status, app_id
-    or None if nothing is playing / SMTC unavailable.
-    """
-    if not _check_smtc():
-        return None
-    try:
-        import asyncio
-        from winrt.windows.media.control import (
-            GlobalSystemMediaTransportControlsSessionManager as GSMTC,
-            GlobalSystemMediaTransportControlsSessionPlaybackStatus as PlaybackStatus,
-        )
-
-        # WinRT async — запускаем через event loop
-        loop = asyncio.new_event_loop()
-        try:
-            session_mgr = loop.run_until_complete(GSMTC.request_async())
-            if not session_mgr:
-                return None
-            sessions = session_mgr.get_sessions()
-            if not sessions:
-                return None
-
-            # берём текущую сессию
-            current = session_mgr.get_current_session()
-            if not current:
-                # если нет текущей — берём первую активную
-                for s in sessions:
-                    try:
-                        info = loop.run_until_complete(s.try_get_media_properties_async())
-                        if info.title:
-                            current = s
-                            break
-                    except Exception:
-                        continue
-            if not current:
-                return None
-
-            # получаем свойства медиа
-            info = loop.run_until_complete(current.try_get_media_properties_async())
-            title = info.title or ""
-            artist = info.artist or ""
-            if not title and not artist:
-                return None
-
-            # получаем статус воспроизведения
-            status = "Unknown"
-            try:
-                playback_info = current.get_playback_info()
-                ps = playback_info.playback_status
-                status_map = {
-                    PlaybackStatus.PLAYING: "Playing",
-                    PlaybackStatus.PAUSED: "Paused",
-                    PlaybackStatus.STOPPED: "Stopped",
-                    PlaybackStatus.CLOSED: "Closed",
-                    PlaybackStatus.OPENED: "Opened",
-                }
-                status = status_map.get(ps, str(ps))
-            except Exception:
-                pass
-
-            # app id
-            app_id = ""
-            try:
-                app_id = current.source_app_user_model_id or ""
-            except Exception:
-                pass
-
-            return {
-                "title": title,
-                "artist": artist,
-                "status": status,
-                "app_id": app_id,
-            }
-        finally:
-            loop.close()
-
-    except Exception as e:
-        log.debug("SMTC error: %s", e)
-        return None
-
-
-def _smtc_search_track(artist: str, title: str):
-    """Search Yandex Music for a track by artist+title from SMTC.
-    Returns a library Track object or None.
-    """
-    try:
-        ym = _get_client()
-        query = f"{artist} - {title}" if artist and title else title or artist
-        if not query:
-            return None
-
-        result = ym.search(query, "track")
-        if not result or not result.tracks or not result.tracks.results:
-            return None
-
-        # ищем точное совпадение
-        for track in result.tracks.results[:5]:
-            track_artists = [a.name.lower() for a in (track.artists or [])]
-            track_title = (track.title or "").lower()
-            search_artist = artist.lower().strip()
-            search_title = title.lower().strip()
-
-            if search_artist in track_artists and search_title == track_title:
-                return track
-
-        # неточного совпадения — берём первый результат
-        return result.tracks.results[0]
-
-    except Exception as e:
-        log.warning("smtc search failed: %s", e)
-        return None
-
-
 def _fetch_now_playing():
-    """Fetch currently playing track. Returns (track_obj, context_type) or (None, None).
+    """Fetch currently playing track. Returns (track, context_type) or (None, None).
 
-    Priority:
-      1. Ynison WebSocket (server-compatible, reliable)
-      2. Windows SMTC + Yandex Music search
-      3. Yandex Music library queues_list + queue
-      4. Raw HTTP API fallback
+    Uses yandex-music 3.x API:
+      0. Ynison WebSocket — real-time player state (best)
+      1. queues_list() → list of Queue objects
+      2. queue(queue_id) → full queue with track IDs
+      3. feed() → last played / recent (fallback)
+      4. landing() → recommendations (fallback)
     """
-    # ── Method 0: Ynison WebSocket (работает с VPS/сервера) ──
+    # ── Method 0: Ynison WebSocket (real-time player state) ──
     try:
-        state = _fetch_ynison_state()
-        if state and state.get("track_id"):
-            track_id = state["track_id"]
+        ynison = _fetch_ynison_state()
+        if ynison and ynison.get("track_id"):
+            track_id = ynison["track_id"]
+            album_id = ynison.get("album_id")
+            ym = _get_client()
             try:
-                ym = _get_client()
                 tracks = ym.tracks([str(track_id)])
-                if tracks and tracks[0]:
+                if tracks:
                     track = tracks[0]
-                    # Добавляем Ynison-специфичные атрибуты
-                    track._ynison_paused = state.get("paused", False)
-                    track._ynison_progress = state.get("progress_ms")
-                    track._ynison_duration = state.get("duration_ms")
-                    track._ynison_device = state.get("device_name")
-                    track._ynison_album_id = state.get("album_id")
+                    # Attach Ynison metadata for caption
+                    track._ynison_paused = ynison.get("paused", True)
+                    track._ynison_progress = ynison.get("progress_ms")
+                    track._ynison_duration = ynison.get("duration_ms")
+                    track._ynison_device = ynison.get("device_name")
+                    track._ynison_album_id = album_id
+                    log.info("Ynison: got track '%s' via WebSocket", track.title)
                     return track, "ynison"
             except Exception as e:
-                log.warning("Ynison track fetch failed: %s", e)
+                log.warning("Ynison: failed to fetch track %s: %s", track_id, e)
     except Exception as e:
-        log.debug("Ynison failed: %s", e)
+        log.warning("Ynison failed: %s", e)
 
-    # ── Method 1: SMTC (Windows only — работает с ЛЮБЫМ плеером) ──
-    smtc = _get_smtc_now_playing()
-    if smtc and smtc.get("title"):
-        # enrich with Yandex Music data (cover, album, etc.)
-        track = _smtc_search_track(smtc.get("artist", ""), smtc.get("title", ""))
-        if track:
-            # добавляем SMTC-специфичные атрибуты к треку
-            track._smtc_status = smtc.get("status", "Unknown")
-            track._smtc_app = smtc.get("app_id", "")
-            track._smtc_artist_raw = smtc.get("artist", "")
-            track._smtc_title_raw = smtc.get("title", "")
-            return track, "smtc"
+    ym = _get_client()
 
-        # если Yandex Music search не сработал — возвращаем raw dict
-        return {
-            "title": smtc["title"],
-            "artists": [{"name": smtc["artist"]}] if smtc.get("artist") else [],
-            "albums": [],
-            "duration_ms": None,
-            "cover_uri": None,
-            "_smtc_status": smtc.get("status", "Unknown"),
-            "_smtc_app": smtc.get("app_id", ""),
-        }, "smtc_raw"
-
-    # ── Method 2: yandex-music library queues_list + queue ──
-    try:
-        ym = _get_client()
-    except Exception:
-        return None, None
-
+    # ── Method 1: queues_list + queue (yandex-music 3.x) ──
+    # queues_list() возвращает список Queue объектов с id и текущим треком
     ql_method = None
     for candidate in ("queues_list", "queuesList", "queues"):
         if hasattr(ym, candidate):
@@ -1427,51 +849,69 @@ def _fetch_now_playing():
                     qid = getattr(q, "id", None)
                     if not qid:
                         continue
+
+                    # queue() возвращает полную очередь с треками
                     q_method = None
                     for qm in ("queue", "get_queue"):
                         if hasattr(ym, qm):
                             q_method = qm
                             break
+
                     if not q_method:
+                        log.debug("no queue() method available")
                         break
+
                     queue_data = getattr(ym, q_method)(qid)
                     if not queue_data:
                         continue
+
+                    # ищем текущий трек из очереди
+                    # атрибут может быть track / current_track / tracks
                     track = getattr(queue_data, "track", None)
                     if not track:
                         track = getattr(queue_data, "current_track", None)
+
+                    # если нет прямого track — пробуем из списка tracks
                     if not track:
                         items = getattr(queue_data, "tracks", None) or getattr(queue_data, "items", None)
                         if items:
                             for item in items:
+                                # каждый item может быть Track или QueueItem
                                 t = None
                                 if hasattr(item, "track"):
                                     t = item.track
                                 elif hasattr(item, "track_id"):
                                     tid = item.track_id
-                                    try:
-                                        ts = ym.tracks([str(tid)] if isinstance(tid, int) else str(tid))
+                                    if isinstance(tid, int):
+                                        ts = ym.tracks([str(tid)])
                                         if ts:
                                             t = ts[0]
-                                    except Exception:
-                                        pass
+                                    elif isinstance(tid, str):
+                                        ts = ym.tracks(tid)
+                                        if ts:
+                                            t = ts[0]
                                 else:
-                                    t = item
+                                    t = item  # сам item — это Track
                                 if t:
                                     track = t
                                     break
+
                     if track:
                         ctx = getattr(queue_data, "context", None) or getattr(q, "context", None)
                         ctx_type = getattr(ctx, "type", None) if ctx else None
                         return track, ctx_type or "queue"
-        except Exception as e:
-            log.warning("library queue method failed: %s", e)
 
-    # ── Method 3: feed (через библиотеку) ──
+                    log.debug("queue(%s) returned no track", qid)
+
+        except Exception as e:
+            log.warning("queue method failed: %s", e, exc_info=True)
+
+    # ── Method 2: feed (last played / recent) ──
     if hasattr(ym, "feed"):
         try:
             feed = ym.feed()
             if feed:
+                # feed.generated содержит недавнюю активность
                 gen = getattr(feed, "generated", None) or []
                 for g in (gen[:5] if gen else []):
                     tracks_data = getattr(g, "tracks", None) or []
@@ -1483,19 +923,364 @@ def _fetch_now_playing():
                             except Exception:
                                 pass
                         if track:
-                            return track, "feed"
+                            return track, "last_played"
         except Exception as e:
-            log.warning("library feed failed: %s", e)
+            log.warning("feed failed: %s", e)
 
-    # ── Method 4: raw HTTP API fallback ──
-    try:
-        track_data, ctx = _fetch_now_playing_raw()
-        if track_data:
-            return track_data, ctx
-    except Exception as e:
-        log.warning("raw API failed: %s", e)
+    # ── Method 3: landing blocks ──
+    for block_ids in [["recent"], ["personal-recommendations"]]:
+        try:
+            landing = ym.landing(block_ids)
+            if landing and landing.blocks:
+                for block in landing.blocks:
+                    bid = str(getattr(block, "block_id", ""))
+                    entities = getattr(block, "entities", None) or []
+                    for ent in entities:
+                        track = getattr(ent, "track", None)
+                        if not track and hasattr(ent, "fetch_track"):
+                            try:
+                                track = ent.fetch_track()
+                            except Exception:
+                                pass
+                        if track:
+                            return track, bid
+        except Exception as e:
+            log.debug("landing(%s) failed: %s", block_ids, e)
 
     return None, None
+
+
+def _fetch_ynison_state():
+    """Connect to Ynison WebSocket and fetch player state.
+
+    Based on working implementations from:
+      - FozerG/YandexMusicRPC (ymrpc/yandex_ws.py)
+      - vsecoder/hikka_modules (ymnow.py)
+      - trudenboy/ma-provider-yandex-ynison
+
+    Two-step WebSocket handshake (raw asyncio, no websockets library):
+      1. Connect to redirector → get host, redirect_ticket, session_id
+      2. Connect to state service (with ticket in subprotocol header) → receive player state
+
+    Returns dict with:
+      - track_id, album_id, playable_id, progress_ms, duration_ms, paused, device_name
+    or None on failure.
+    """
+    import ssl as _ssl
+    import hashlib
+    import base64
+
+    token = _get_token()
+    if not token:
+        return None
+
+    device_id = uuid.uuid4().hex[:16]
+    # Ynison-Device-Info must be double-encoded JSON string
+    device_info_str = json.dumps({"app_name": "Chrome", "type": 1})
+
+    def _build_proto(**extra):
+        """Build Sec-WebSocket-Protocol header value.
+        Bearer, v2, {"Ynison-Device-Id":"...","Ynison-Device-Info":"{...json...}"}
+        """
+        proto_obj = {"Ynison-Device-Id": device_id, "Ynison-Device-Info": device_info_str}
+        proto_obj.update(extra)
+        return "Bearer, v2, " + json.dumps(proto_obj, separators=(",", ":"))
+
+    async def _ws_handshake(host, path, port=443, protocol=None):
+        """Perform raw WebSocket handshake, return (reader, writer, leftover)."""
+        if not protocol:
+            protocol = _build_proto()
+        ssl_ctx = _ssl.create_default_context()
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(host, port, ssl=ssl_ctx), timeout=10,
+        )
+        ws_key = base64.b64encode(os.urandom(16)).decode()
+        request = (
+            f"GET {path} HTTP/1.1\r\n"
+            f"Host: {host}\r\n"
+            f"Upgrade: websocket\r\n"
+            f"Connection: Upgrade\r\n"
+            f"Sec-WebSocket-Key: {ws_key}\r\n"
+            f"Sec-WebSocket-Version: 13\r\n"
+            f"Sec-WebSocket-Protocol: {protocol}\r\n"
+            f"Authorization: OAuth {token}\r\n"
+            f"Origin: https://music.yandex.ru\r\n"
+            f"\r\n"
+        )
+        writer.write(request.encode())
+        await writer.drain()
+
+        # Read HTTP response, keeping any data after headers (WebSocket frames)
+        response_data = b""
+        while b"\r\n\r\n" not in response_data:
+            chunk = await asyncio.wait_for(reader.read(4096), timeout=10)
+            if not chunk:
+                break
+            response_data += chunk
+
+        header_end = response_data.index(b"\r\n\r\n") + 4
+        leftover = response_data[header_end:]  # might contain WS frame data
+        response_str = response_data[:header_end].decode("utf-8", errors="replace")
+
+        if "101" not in response_str.split("\r\n")[0]:
+            log.warning("Ynison handshake failed: %s", response_str.split("\r\n")[0])
+            writer.close()
+            return None, None, None
+
+        return reader, writer, leftover
+
+    async def _ws_recv(reader, leftover=b""):
+        """Read one WebSocket text frame, using leftover data from handshake."""
+        buf = bytearray(leftover)
+        while True:
+            # Need at least 2 bytes for frame header
+            while len(buf) < 2:
+                chunk = await asyncio.wait_for(reader.read(4096), timeout=10)
+                if not chunk:
+                    return None
+                buf.extend(chunk)
+
+            opcode = buf[0] & 0x0F
+            masked = (buf[1] >> 7) & 1
+            length = buf[1] & 0x7F
+            header_size = 2
+
+            if length == 126:
+                while len(buf) < 4:
+                    chunk = await asyncio.wait_for(reader.read(4096), timeout=10)
+                    if not chunk:
+                        return None
+                    buf.extend(chunk)
+                length = int.from_bytes(buf[2:4], "big")
+                header_size = 4
+            elif length == 127:
+                while len(buf) < 10:
+                    chunk = await asyncio.wait_for(reader.read(4096), timeout=10)
+                    if not chunk:
+                        return None
+                    buf.extend(chunk)
+                length = int.from_bytes(buf[2:10], "big")
+                header_size = 10
+
+            mask_size = 4 if masked else 0
+            total_header = header_size + mask_size
+
+            while len(buf) < total_header + length:
+                chunk = await asyncio.wait_for(reader.read(4096), timeout=10)
+                if not chunk:
+                    return None
+                buf.extend(chunk)
+
+            payload = bytes(buf[total_header:total_header + length])
+            if masked:
+                mask_key = buf[header_size:total_header]
+                payload = bytes(b ^ mask_key[i % 4] for i, b in enumerate(payload))
+
+            # Consume processed bytes
+            del buf[:total_header + length]
+
+            if opcode == 8:  # Close
+                return None
+            if opcode == 9:  # Ping — skip
+                continue
+            # opcode 1 (text) or 2 (binary)
+            return payload.decode("utf-8", errors="replace")
+
+    async def _ws_send(writer, text):
+        """Send one masked WebSocket text frame."""
+        data = text.encode("utf-8")
+        length = len(data)
+        mask_key = b"\xab\xcd\xef\x01"
+        if length < 126:
+            frame = bytes([0x81, 0x80 | length]) + mask_key
+        elif length < 65536:
+            frame = bytes([0x81, 0x80 | 126]) + length.to_bytes(2, "big") + mask_key
+        else:
+            frame = bytes([0x81, 0x80 | 127]) + length.to_bytes(8, "big") + mask_key
+        masked_data = bytes(b ^ mask_key[i % 4] for i, b in enumerate(data))
+        writer.write(frame + masked_data)
+        await writer.drain()
+
+    async def _ynison_connect():
+        # ── Step 1: Redirector ──
+        try:
+            reader, writer, leftover = await _ws_handshake(
+                "ynison.music.yandex.ru",
+                "/redirector.YnisonRedirectService/GetRedirectToYnison",
+            )
+            if not reader:
+                return None
+            redirect_msg = await _ws_recv(reader, leftover)
+            log.info("Ynison redirector response: %s", redirect_msg[:500] if redirect_msg else "empty")
+            writer.close()
+        except Exception as e:
+            log.warning("Ynison redirector failed: %s", e)
+            return None
+
+        if not redirect_msg:
+            return None
+
+        # Parse redirector response
+        target_host = None
+        redirect_ticket = None
+        session_id = None
+
+        try:
+            data = json.loads(redirect_msg)
+            target_host = data.get("host") or data.get("targetHost") or data.get("target_host")
+            redirect_ticket = data.get("redirect_ticket") or data.get("ticket")
+            session_id = data.get("session_id")
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        if not target_host or not redirect_ticket:
+            import re
+            host_match = re.search(r'"host"\s*:\s*"([^"]+)"', redirect_msg)
+            ticket_match = re.search(r'"(?:redirect_)?ticket"\s*:\s*"?([^"\s,}]+)', redirect_msg)
+            session_match = re.search(r'"session_id"\s*:\s*(\d+)', redirect_msg)
+            if host_match:
+                target_host = host_match.group(1)
+            if ticket_match:
+                redirect_ticket = ticket_match.group(1)
+            if session_match:
+                session_id = session_match.group(1)
+
+        if not target_host or not redirect_ticket:
+            log.warning("Ynison: could not parse redirector response: %s", redirect_msg[:200])
+            return None
+
+        log.info("Ynison: host=%s, ticket=%s, session=%s", target_host, redirect_ticket, session_id)
+
+        # ── Step 2: State service (ticket + session_id in subprotocol header) ──
+        try:
+            extra = {"Ynison-Redirect-Ticket": str(redirect_ticket)}
+            if session_id:
+                extra["Ynison-Session-Id"] = str(session_id)
+            state_proto = _build_proto(**extra)
+
+            reader, writer, leftover = await _ws_handshake(
+                target_host,
+                "/ynison_state.YnisonStateService/PutYnisonState",
+                protocol=state_proto,
+            )
+            if not reader:
+                log.warning("Ynison: state handshake failed")
+                return None
+
+            init_msg = json.dumps({
+                "updates": [{
+                    "update_full_state": {
+                        "player_state": {
+                            "status": {"paused": True},
+                            "player_queue": {},
+                        },
+                        "device_info": {
+                            "device_id": device_id,
+                            "capabilities": [],
+                            "type": 1,
+                            "app_name": "sandusr",
+                        },
+                    }
+                }],
+                "ticket": redirect_ticket,
+            })
+            await _ws_send(writer, init_msg)
+
+            response = await _ws_recv(reader, leftover)
+            log.info("Ynison state response: %s", response[:500] if response else "empty")
+            writer.close()
+            return response
+
+        except Exception as e:
+            log.warning("Ynison state service failed: %s", e)
+            return None
+
+    # Run async code in new event loop (we're in sync context)
+    loop = asyncio.new_event_loop()
+    try:
+        response = loop.run_until_complete(_ynison_connect())
+    finally:
+        loop.close()
+
+    if not response:
+        return None
+
+    # Parse player state from response
+    try:
+        data = json.loads(response)
+    except (json.JSONDecodeError, TypeError):
+        log.warning("Ynison: invalid JSON response")
+        return None
+
+    player_state = None
+    if isinstance(data, dict):
+        updates = data.get("updates", [])
+        for u in updates:
+            full = u.get("update_full_state", {})
+            if full:
+                player_state = full.get("player_state") or full
+                break
+        if not player_state:
+            player_state = data.get("player_state")
+
+    if not player_state or not isinstance(player_state, dict):
+        log.debug("Ynison: no player_state in response")
+        return None
+
+    pq = player_state.get("player_queue", {})
+    playable_list = pq.get("playable_list", [])
+    current_idx = pq.get("current_playable_index", 0)
+
+    if not playable_list or current_idx >= len(playable_list):
+        log.debug("Ynison: empty playable_list or invalid index")
+        return None
+
+    playable = playable_list[current_idx]
+    playable_id = playable.get("playable_id", "")
+
+    # Parse playable_id: "track:12345:album:67890"
+    track_id = None
+    album_id = None
+    parts = playable_id.split(":")
+    for i, p in enumerate(parts):
+        if p == "track" and i + 1 < len(parts):
+            try:
+                track_id = int(parts[i + 1])
+            except ValueError:
+                pass
+        if p == "album" and i + 1 < len(parts):
+            try:
+                album_id = int(parts[i + 1])
+            except ValueError:
+                pass
+
+    status = player_state.get("status", {})
+    progress_ms = status.get("progress_ms")
+    duration_ms = status.get("duration_ms")
+    paused = status.get("paused", True)
+
+    # Device info
+    devices = data.get("devices", []) if isinstance(data, dict) else []
+    active_device_id = data.get("active_device_id_optional")
+    device_name = None
+    for d in devices:
+        if d.get("device_id") == active_device_id:
+            device_name = d.get("device_name") or d.get("app_name")
+            break
+
+    if not track_id:
+        log.debug("Ynison: could not extract track_id from playable_id=%s", playable_id)
+        return None
+
+    return {
+        "playable_id": playable_id,
+        "progress_ms": progress_ms,
+        "duration_ms": duration_ms,
+        "paused": paused,
+        "device_name": device_name,
+        "track_id": track_id,
+        "album_id": album_id,
+    }
 
 
 async def _cmd_now(client, message) -> None:
@@ -1508,93 +1293,71 @@ async def _cmd_now(client, message) -> None:
         track, ctx_type = await _run_sync(_fetch_now_playing)
 
         if not track:
-            # диагностика — пробуем raw API напрямую
-            diag_lines = ["📭 Не удалось определить играющий трек\n"]
+            # диагностика
+            ym_ver = "?.?"
+            available = []
+            queues_info = ""
             try:
-                import requests as http_lib
-                token = _get_token()
-                headers = {"Authorization": f"OAuth {token}"}
-                for ep in ("/queues", "/feed"):
-                    try:
-                        r = await _run_sync(http_lib.get, f"https://api.music.yandex.net{ep}", headers=headers, timeout=10)
-                        status = r.status_code
-                        if status == 200:
-                            data = r.json()
-                            preview = json.dumps(data, ensure_ascii=False)[:150]
-                            diag_lines.append(f"GET {ep}: {status} OK\n<code>{preview}</code>")
-                        else:
-                            diag_lines.append(f"GET {ep}: {status}")
-                    except Exception as e:
-                        diag_lines.append(f"GET {ep}: ❌ {str(e)[:60]}")
+                import yandex_music
+                ym_ver = getattr(yandex_music, "__version__", "?")
+                ym = _get_client()
+                for m in ("queues_list", "queuesList", "queues", "queue", "feed", "landing"):
+                    if hasattr(ym, m):
+                        available.append(m)
+
+                # попробуем получить список очередей для диагностики
+                ql = None
+                for qm in ("queues_list", "queuesList", "queues"):
+                    if hasattr(ym, qm):
+                        try:
+                            ql = getattr(ym, qm)()
+                        except Exception:
+                            pass
+                        break
+                if ql:
+                    queues_info = f"Очередей найдено: {len(ql)}\n"
+                    for qi, q in enumerate(ql[:3]):
+                        qid = getattr(q, "id", "?")
+                        qctx = getattr(q, "context", None)
+                        qtype = getattr(qctx, "type", "?") if qctx else "?"
+                        queues_info += f"  [{qi}] id={qid}, context={qtype}\n"
+                else:
+                    queues_info = "Очереди: пусто или недоступны"
             except Exception:
-                diag_lines.append("Raw API: недоступен")
+                pass
 
             await message.edit_text(
-                "\n".join(diag_lines),
+                f"📭 Не удалось определить играющий трек\n\n"
+                f"<i>Возможные причины:</i>\n"
+                f"• Музыка играет в браузере — очередь не синхронизируется\n"
+                f"  (нужен десктоп/мобильный клиент ЯМ)\n"
+                f"• Нет активной очереди воспроизведения\n\n"
+                f"<b>Диагностика:</b>\n"
+                f"<i>Версия yandex-music: {ym_ver}</i>\n"
+                f"<i>Методы: {', '.join(available) if available else 'none'}</i>\n"
+                f"<i>{queues_info}</i>",
                 parse_mode=ParseMode.HTML,
-                disable_web_page_preview=True,
             )
             return
 
-        # track может быть объектом библиотеки или raw dict
-        is_dict = isinstance(track, dict)
-        if is_dict:
-            title = track.get("title", "?")
-            artists_data = track.get("artists", [])
-            artists = ", ".join(a.get("name", "?") for a in artists_data) if artists_data else "?"
-            dur = _fmt_dur(track.get("duration_ms"))
-            albums = track.get("albums", [])
-            album = albums[0].get("title", "") if albums else ""
-            cover_uri = track.get("coverUri") or track.get("cover_uri")
-        else:
-            title = track.title
-            artists = ", ".join(a.name for a in track.artists) if track.artists else ""
-            dur = _fmt_dur(getattr(track, "duration_ms", None))
-            album = track.albums[0].title if track.albums else ""
-            cover_uri = getattr(track, "cover_uri", None)
+        artists = ", ".join(a.name for a in track.artists) if track.artists else ""
+        dur = _fmt_dur(getattr(track, "duration_ms", None))
+        album = track.albums[0].title if track.albums else ""
 
+        cover_uri = getattr(track, "cover_uri", None)
         cover_path = None
         if cover_uri:
             cover_path = await _run_sync(_generate_now_cover, cover_uri)
 
         # ── build caption ──
-        is_last = ctx_type in ("last_played", "feed_raw")
-        is_smtc = ctx_type in ("smtc", "smtc_raw")
-        is_ynison = ctx_type == "ynison"
-        is_paused = False
-        progress_str = ""
-        device_str = ""
-
-        if is_ynison and not is_dict:
-            is_paused = getattr(track, "_ynison_paused", False)
-            progress = getattr(track, "_ynison_progress", None)
-            device = getattr(track, "_ynison_device", None)
-            if progress is not None:
-                progress_str = f" ({_fmt_dur(progress)}/{_fmt_dur(getattr(track, 'duration_ms', None))})"
-            if device:
-                device_str = f"\n📱 Устройство: {device}"
-        elif is_smtc and not is_dict:
-            status = getattr(track, "_smtc_status", "Playing")
-            is_paused = status == "Paused"
-        elif is_smtc and is_dict:
-            status = track.get("_smtc_status", "Playing")
-            is_paused = status == "Paused"
-
-        if is_last:
-            label = "Последний трек:"
-        elif is_paused:
-            label = "На паузе:"
-        else:
-            label = "Сейчас играет:"
-
-        lines = [f"{'⏸' if is_paused else '▶'} <b>{label}</b>", ""]
-        lines.append(f"🎵 <b>{title}</b>")
+        is_last = ctx_type == "last_played"
+        label = "Последний трек:" if is_last else "Сейчас играет:"
+        lines = [f"☞ <b>{label}</b>", ""]
+        lines.append(f"🎵 <b>{track.title}</b>")
         lines.append(f"🎤 {artists}")
         if album:
             lines.append(f"💿 {album}")
-        lines.append(f"⏱ {dur}{progress_str}")
-        if device_str:
-            lines.append(device_str)
+        lines.append(f"⏱ {dur}")
         text = "\n".join(lines)
 
         await message.edit_text("📡 Отправляю…")
@@ -1638,93 +1401,45 @@ async def _cmd_debug(message) -> None:
 
     try:
         ym = _get_client()
+        methods = sorted([m for m in dir(ym) if not m.startswith("_") and callable(getattr(ym, m, None))])
+
+        # group relevant methods
+        queue_methods = [m for m in methods if "queue" in m.lower()]
+        player_methods = [m for m in methods if "player" in m.lower() or "play" in m.lower()]
+        track_methods = [m for m in methods if "track" in m.lower()]
+        feed_methods = [m for m in methods if "feed" in m.lower()]
+
         import yandex_music
         ver = getattr(yandex_music, "__version__", "?")
 
-        lines = [f"<b>🔧 Yandex Music Debug</b>\nВерсия: <code>{ver}</code>\n"]
+        lines = [f"<b>🔧 Yandex Music Debug</b>\n"]
+        lines.append(f"Версия библиотеки: <code>{ver}</code>")
+        lines.append(f"Всего методов: {len(methods)}\n")
 
-        # ── 0. Ynison WebSocket ──
-        try:
-            ynison = await _run_sync(_fetch_ynison_state)
-            if ynison:
-                lines.append(f"<b>▶ Ynison:</b> ✅")
-                lines.append(f"  track_id: {ynison.get('track_id')}")
-                lines.append(f"  paused: {ynison.get('paused')}")
-                lines.append(f"  progress: {ynison.get('progress_ms')}ms / {ynison.get('duration_ms')}ms")
-                lines.append(f"  device: {ynison.get('device_name') or '?'}")
-            else:
-                lines.append("<b>▶ Ynison:</b> ❌ не удалось подключиться")
-        except Exception as e:
-            lines.append(f"<b>▶ Ynison:</b> ❌ {e}")
+        if queue_methods:
+            lines.append(f"<b>Queue ({len(queue_methods)}):</b>\n<code>{', '.join(queue_methods)}</code>")
+        if player_methods:
+            lines.append(f"\n<b>Player ({len(player_methods)}):</b>\n<code>{', '.join(player_methods)}</code>")
+        if track_methods:
+            lines.append(f"\n<b>Track ({len(track_methods[:15])}):</b>\n<code>{', '.join(track_methods[:15])}</code>")
+        if feed_methods:
+            lines.append(f"\n<b>Feed ({len(feed_methods)}):</b>\n<code>{', '.join(feed_methods)}</code>")
 
-        lines.append("")
-
-        # ── 1. SMTC (Windows) ──
-        if _check_smtc():
+        # test feed
+        if hasattr(ym, "feed"):
             try:
-                smtc = await _run_sync(_get_smtc_now_playing)
-                if smtc:
-                    lines.append(f"<b>▶ SMTC:</b> ✅")
-                    lines.append(f"  🎵 {smtc.get('title', '?')}")
-                    lines.append(f"  🎤 {smtc.get('artist', '?')}")
-                    lines.append(f"  Статус: {smtc.get('status', '?')}")
-                    lines.append(f"  App: <code>{smtc.get('app_id', '?')}</code>")
-                else:
-                    lines.append("<b>▶ SMTC:</b> ничего не играет")
+                feed = await _run_sync(ym.feed)
+                if feed:
+                    gen = getattr(feed, "generated", None) or []
+                    total_tracks = 0
+                    for g in gen[:3]:
+                        td = getattr(g, "tracks", None) or []
+                        total_tracks += len(td)
+                    lines.append(f"\n<b>Feed test:</b> {len(gen)} блоков, {total_tracks} треков в первых 3")
             except Exception as e:
-                lines.append(f"<b>▶ SMTC:</b> ❌ {e}")
-        else:
-            lines.append("<b>▶ SMTC:</b> недоступен (не Windows или нет winrt)")
+                lines.append(f"\n<b>Feed test:</b> ❌ {e}")
 
-        lines.append("")
-
-        # ── 1. Аккаунт ──
-        try:
-            me = ym.me
-            if me:
-                uid = getattr(me, "uid", None) or getattr(me, "id", None) or "?"
-                login = getattr(me.account, "login", "?") if hasattr(me, "account") else "?"
-                lines.append(f"<b>▶ Аккаунт:</b> uid={uid}, login={login}")
-                # покажем атрибуты me
-                me_attrs = sorted([a for a in dir(me) if not a.startswith("_") and not callable(getattr(me, a, None))])
-                lines.append(f"  me attrs: <code>{', '.join(me_attrs[:15])}</code>")
-                # проверим _request
-                req = getattr(ym, "_request", None) or getattr(ym, "request", None)
-                if req:
-                    lines.append(f"  request type: <code>{type(req).__name__}</code>")
-                    base = getattr(req, "base_url", None) or getattr(req, "_base_url", None)
-                    if base:
-                        lines.append(f"  base_url: <code>{base}</code>")
-        except Exception as e:
-            lines.append(f"<b>▶ Аккаунт:</b> ❌ {e}")
-
-        # ── 2. Raw API calls (прямой HTTP через requests) ──
-        lines.append("")
-        try:
-            import requests as http_lib
-            token = _get_token()
-            base = "https://api.music.yandex.net"
-            headers = {"Authorization": f"OAuth {token}"}
-            for endpoint in ("/queues", "/player/state", "/feed"):
-                try:
-                    resp = await _run_sync(http_lib.get, f"{base}{endpoint}", headers=headers, timeout=5)
-                    data = resp.json() if resp.status_code == 200 else {"error": resp.status_code}
-                    if isinstance(data, dict):
-                        preview = json.dumps(data, ensure_ascii=False)[:250]
-                        lines.append(f"<b>▶ GET {endpoint}:</b> {resp.status_code}\n  <code>{preview}</code>")
-                    elif isinstance(data, list):
-                        lines.append(f"<b>▶ GET {endpoint}:</b> {resp.status_code}, list[{len(data)}]")
-                    else:
-                        lines.append(f"<b>▶ GET {endpoint}:</b> {resp.status_code}")
-                except Exception as e:
-                    lines.append(f"<b>▶ GET {endpoint}:</b> ❌ {type(e).__name__}: {str(e)[:80]}")
-        except ImportError:
-            lines.append("<b>▶ Raw API:</b> requests не установлен")
-        except Exception as e:
-            lines.append(f"<b>▶ Raw API:</b> ❌ {e}")
-
-        # ── 3. queues_list через библиотеку ──
-        lines.append("")
+        # test queues_list
         ql_method = None
         for qm in ("queues_list", "queuesList", "queues"):
             if hasattr(ym, qm):
@@ -1734,30 +1449,44 @@ async def _cmd_debug(message) -> None:
             try:
                 queues = await _run_sync(getattr(ym, ql_method))
                 if queues:
-                    lines.append(f"<b>▶ {ql_method}:</b> {len(queues)} очередей")
+                    lines.append(f"\n<b>Queues ({len(queues)}):</b>")
+                    for qi, q in enumerate(queues[:5]):
+                        qid = getattr(q, "id", "?")
+                        qctx = getattr(q, "context", None)
+                        qtype = getattr(qctx, "type", "?") if qctx else "?"
+                        lines.append(f"  [{qi}] id={qid}, ctx={qtype}")
+
+                    # пробуем queue(id) для первой очереди
+                    first_qid = getattr(queues[0], "id", None)
+                    if first_qid:
+                        q_get = "queue" if hasattr(ym, "queue") else None
+                        if q_get:
+                            qd = await _run_sync(getattr(ym, q_get), first_qid)
+                            if qd:
+                                attrs = sorted([a for a in dir(qd) if not a.startswith("_")])
+                                lines.append(f"\n<b>queue() attrs:</b> <code>{', '.join(attrs[:20])}</code>")
+                                # покажем первые 3 атрибута с данными
+                                for attr in ("track", "current_track", "tracks", "items"):
+                                    val = getattr(qd, attr, None)
+                                    if val:
+                                        if isinstance(val, list):
+                                            lines.append(f"  {attr}: list[{len(val)}]")
+                                            if val:
+                                                item0 = val[0]
+                                                lines.append(f"    [0] type={type(item0).__name__}, attrs={sorted([a for a in dir(item0) if not a.startswith('_')])[:10]}")
+                                        else:
+                                            lines.append(f"  {attr}: {type(val).__name__}")
                 else:
-                    lines.append(f"<b>▶ {ql_method}:</b> пусто")
+                    lines.append(f"\n<b>Queues:</b> пусто (music playing?)")
             except Exception as e:
-                lines.append(f"<b>▶ {ql_method}:</b> ❌ {e}")
+                lines.append(f"\n<b>Queues test:</b> ❌ {e}")
         else:
-            lines.append(f"<b>▶ {ql_method}:</b> не найден")
+            lines.append(f"\n<b>Queues:</b> метод не найден")
 
-        # ── 4. feed ──
-        if hasattr(ym, "feed"):
-            try:
-                feed = await _run_sync(ym.feed)
-                if feed:
-                    gen = getattr(feed, "generated", None) or []
-                    lines.append(f"<b>▶ Feed:</b> {len(gen)} блоков")
-                else:
-                    lines.append(f"<b>▶ Feed:</b> None")
-            except Exception as e:
-                lines.append(f"<b>▶ Feed:</b> ❌ {e}")
-
-        # ── 5. Вывод ──
         text = "\n".join(lines)
         if len(text) > 4000:
             text = text[:3900] + "\n<i>...обрезано</i>"
+
         try:
             await message.edit_text(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
         except Exception:
@@ -1785,7 +1514,7 @@ async def _cmd_token(message) -> None:
         try:
             await message.edit_text(
                 "\u274c Использование: <code>.ya token YOUR_TOKEN</code>\n\n"
-                '<i>Получить токен: </i>\n'
+                '<i>Получить токен: </i>'
                 '<a href="https://oauth.yandex.ru/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d">'
                 "OAuth авторизация</a>",
                 parse_mode=ParseMode.HTML,
