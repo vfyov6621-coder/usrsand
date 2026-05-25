@@ -301,7 +301,7 @@ async def rn_cmd(client, message: Message):
     from pyrogram.enums import ParseMode
 
     parts = message.text.split()
-    if len(parts) < 4:
+    if len(parts) < 3:
         await safe_edit(message,
             "❌ Использование: <code>-rn от до</code>\n"
             "Пример: <code>-rn 1 10</code>",
@@ -310,8 +310,8 @@ async def rn_cmd(client, message: Message):
         return
 
     try:
-        lo = int(parts[2])
-        hi = int(parts[3])
+        lo = int(parts[1])
+        hi = int(parts[2])
     except ValueError:
         await safe_edit(message, "❌ Укажи числа. Пример: <code>-rn 1 10</code>", parse_mode=ParseMode.HTML)
         return
