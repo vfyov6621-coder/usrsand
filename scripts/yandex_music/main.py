@@ -1583,42 +1583,59 @@ def _fetch_ynison_state():
 
 
 async def _cmd_bar(client, message) -> None:
-    """Show progress bar preset selector with inline keyboard."""
-    from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+    """Set progress bar preset. Usage: .ya bar -list | .ya bar -N"""
     from pyrogram.enums import ParseMode
+
+    parts = message.text.split()
+    arg = parts[2] if len(parts) > 2 else ""
 
     try:
         cfg = _load_bar_cfg()
         current = cfg.get("preset", -1)
-        current_name = BAR_PRESETS.get(current, ("?", ""))[0]
 
-        rows = []
-        # Row: Auto
-        rows.append([InlineKeyboardButton(
-            f"{'✓ ' if current == -1 else ''}{BAR_PRESETS[-1][0]}",
-            callback_data="ym_bar:-1",
-        )])
-        # Rows: presets 0-5, two per row
-        for i in range(0, 6, 2):
-            row = []
-            for j in (i, i + 1):
-                row.append(InlineKeyboardButton(
-                    f"{'✓ ' if current == j else ''}{BAR_PRESETS[j][0]}",
-                    callback_data=f"ym_bar:{j}",
-                ))
-            rows.append(row)
+        # ── .ya bar -list ──
+        if arg == "-list":
+            lines = ["<b>Стиль прогресс-бара</b>\n"]
+            for pid, (name, desc) in BAR_PRESETS.items():
+                tag = " ✓" if pid == current else ""
+                if pid == -1:
+                    lines.append(f"<code>.ya bar -1</code>  {name}{tag}")
+                else:
+                    lines.append(f"<code>.ya bar -{pid}</code>  {name}{tag}")
+            lines.append(f"\n<i>Текущий: {BAR_PRESETS[current][0]}</i>")
+            await message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML)
+            return
 
-        markup = InlineKeyboardMarkup(rows)
-        text = (
-            f"<b>Стиль прогресс-бара</b>\n\n"
-            f"<b>Текущий:</b> {current_name}\n\n"
-            f"<i>Выбери стиль для карточки</i> <code>.ya now</code>"
+        # ── .ya bar -N ──
+        if arg.startswith("-"):
+            try:
+                preset = int(arg[1:])
+            except ValueError:
+                await message.edit_text("❌ Использование: <code>.ya bar -N</code> или <code>.ya bar -list</code>",
+                                        parse_mode=ParseMode.HTML)
+                return
+            if preset not in BAR_PRESETS:
+                await message.edit_text(f"❌ Нет пресета {preset}. Смотри: <code>.ya bar -list</code>",
+                                        parse_mode=ParseMode.HTML)
+                return
+            cfg["preset"] = preset
+            _save_bar_cfg(cfg)
+            name = BAR_PRESETS[preset][0]
+            await message.edit_text(f"✓ Прогресс-бар: {name}", parse_mode=ParseMode.HTML)
+            return
+
+        # ── no arg → show current ──
+        name = BAR_PRESETS.get(current, ("?", ""))[0]
+        await message.edit_text(
+            f"<b>Текущий стиль:</b> {name}\n\n"
+            f"<code>.ya bar -list</code> — список стилей\n"
+            f"<code>.ya bar -N</code> — выбрать стиль",
+            parse_mode=ParseMode.HTML,
         )
-        await message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=markup)
     except Exception as e:
         log.error("_cmd_bar error: %s", e, exc_info=True)
         try:
-            await message.reply(f"❌ Ошибка: {e}")
+            await message.reply(f"❌ {e}")
         except Exception:
             pass
 
@@ -1996,57 +2013,9 @@ def register(client):
             await safe_edit(message, f"\u274c Неожиданная ошибка: {e}")
 
     async def _on_callback(client, callback_query):
-        """Handle inline button presses (ym_dl:track_id, ym_bar:N)."""
+        """Handle inline button presses (ym_dl:track_id)."""
         data = callback_query.data
-        if not data:
-            return
-
-        # ── Progress bar preset selection ──
-        if data.startswith("ym_bar:"):
-            try:
-                preset = int(data.split(":", 1)[1])
-                if preset < -1 or preset > 5:
-                    preset = -1
-            except (ValueError, IndexError):
-                preset = -1
-
-            cfg = _load_bar_cfg()
-            cfg["preset"] = preset
-            _save_bar_cfg(cfg)
-
-            name = BAR_PRESETS.get(preset, ("?", ""))[0]
-            await callback_query.answer(f"✓ {name}", show_alert=False)
-
-            # Rebuild keyboard with updated selection
-            from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-            rows = []
-            rows.append([InlineKeyboardButton(
-                f"{'✓ ' if preset == -1 else ''}{BAR_PRESETS[-1][0]}",
-                callback_data="ym_bar:-1",
-            )])
-            for i in range(0, 6, 2):
-                row = []
-                for j in (i, i + 1):
-                    row.append(InlineKeyboardButton(
-                        f"{'✓ ' if preset == j else ''}{BAR_PRESETS[j][0]}",
-                        callback_data=f"ym_bar:{j}",
-                    ))
-                rows.append(row)
-            markup = InlineKeyboardMarkup(rows)
-            text = (
-                f"<b>\U0001f3a7 Стиль прогресс-бара</b>\n\n"
-                f"<b>Текущий:</b> {name}\n\n"
-                f"<i>Выбери стиль для карточки</i> <code>.ya now</code>"
-            )
-            try:
-                await callback_query.message.edit_text(
-                    text, parse_mode=ParseMode.HTML, reply_markup=markup)
-            except Exception:
-                pass
-            return
-
-        # ── Track download callback ──
-        if not data.startswith("ym_dl:"):
+        if not data or not data.startswith("ym_dl:"):
             return
 
         track_id = data.split(":", 1)[1]
@@ -2070,7 +2039,7 @@ def register(client):
 
     client.add_handler(CallbackQueryHandler(
         _on_callback,
-        filters.regex(r"^ym_(dl|bar):"),
+        filters.regex(r"^ym_dl:"),
     ))
 
 
