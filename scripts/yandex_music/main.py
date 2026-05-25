@@ -1301,23 +1301,39 @@ def _fetch_ynison_state():
     if playable_list and 0 <= current_idx < len(playable_list):
         playable = playable_list[current_idx]
         playable_id = playable.get("playable_id", "")
-        # Parse playable_id: "track:12345:album:67890"
-        parts = playable_id.split(":")
-        for i, p in enumerate(parts):
-            if p == "track" and i + 1 < len(parts):
-                try:
-                    track_id = int(parts[i + 1])
-                except ValueError:
-                    pass
-            if p == "album" and i + 1 < len(parts):
-                try:
-                    album_id = int(parts[i + 1])
-                except ValueError:
-                    pass
 
-    # Fallback: parse entity_id directly — "track:135433405"
+        # Format 1: plain track ID — "141591242" (Моя волна, радио)
+        if playable_id and ":" not in playable_id:
+            try:
+                track_id = int(playable_id)
+            except ValueError:
+                pass
+            # album_id comes from separate field
+            album_id_str = playable.get("album_id_optional", "")
+            if album_id_str:
+                try:
+                    album_id = int(album_id_str)
+                except ValueError:
+                    pass
+        else:
+            # Format 2: "track:12345:album:67890"
+            parts = playable_id.split(":")
+            for i, p in enumerate(parts):
+                if p == "track" and i + 1 < len(parts):
+                    try:
+                        track_id = int(parts[i + 1])
+                    except ValueError:
+                        pass
+                if p == "album" and i + 1 < len(parts):
+                    try:
+                        album_id = int(parts[i + 1])
+                    except ValueError:
+                        pass
+
+    # Fallback: parse entity_id — "track:135433405" or "2045428801:3"
     if not track_id and entity_id:
         parts = entity_id.split(":")
+        # "track:ID" format
         for i, p in enumerate(parts):
             if p == "track" and i + 1 < len(parts):
                 try:
@@ -1329,6 +1345,7 @@ def _fetch_ynison_state():
                     album_id = int(parts[i + 1])
                 except ValueError:
                     pass
+        # "playlist_id:track_index" format — can't extract track, skip
 
     status = player_state.get("status", {})
     progress_ms = status.get("progress_ms")
