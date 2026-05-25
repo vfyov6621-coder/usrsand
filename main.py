@@ -10,6 +10,8 @@ import logging
 import threading
 import traceback
 import importlib
+import random
+import math
 
 # ═══════════════════════════════════════════════════════════════════════
 #  Connection fixes — MUST be before any imports that use network
@@ -196,7 +198,7 @@ def _patch_pyrogram_timeout():
 
 
 # ═══════════════════════════════════════════════════════════════════════
-#  .mm — menu
+#  -mm — menu
 # ═══════════════════════════════════════════════════════════════════════
 
 MM_KEYBOARD = InlineKeyboardMarkup([
@@ -250,14 +252,14 @@ async def mm_cb(client, callback: CallbackQuery):
 
 
 # ═══════════════════════════════════════════════════════════════════════
-#  .mf  —  set menu photo from reply
+#  -mf  —  set menu photo from reply
 # ═══════════════════════════════════════════════════════════════════════
 
 async def mf_cmd(client, message: Message):
     """Reply to a photo to set it as the bot menu photo."""
     if not message.reply_to_message:
         await safe_edit(message,
-            "❌ Ответьте на сообщение с фото:\n<code>.mf</code> (ответ на фото)",
+            "❌ Ответьте на сообщение с фото:\n<code>-mf</code> (ответ на фото)",
             parse_mode=ParseMode.HTML,
         )
         return
@@ -280,7 +282,7 @@ async def mf_cmd(client, message: Message):
 
         if file:
             await safe_edit(message,
-                "✅ Фото установлено!\n\nТеперь <code>.mm</code> покажет это фото.",
+                "✅ Фото установлено!\n\nТеперь <code>-mm</code> покажет это фото.",
                 parse_mode=ParseMode.HTML,
             )
             add_log("Menu photo updated")
@@ -291,26 +293,85 @@ async def mf_cmd(client, message: Message):
 
 
 # ═══════════════════════════════════════════════════════════════════════
-#  .lm  —  script management
+#  -rn  —  randomizer (non-uniform distribution)
+# ═══════════════════════════════════════════════════════════════════════
+
+async def rn_cmd(client, message: Message):
+    """Random number with different probabilities. Usage: -rn 1 10"""
+    from pyrogram.enums import ParseMode
+
+    parts = message.text.split()
+    if len(parts) < 4:
+        await safe_edit(message,
+            "❌ Использование: <code>-rn от до</code>\n"
+            "Пример: <code>-rn 1 10</code>",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    try:
+        lo = int(parts[2])
+        hi = int(parts[3])
+    except ValueError:
+        await safe_edit(message, "❌ Укажи числа. Пример: <code>-rn 1 10</code>", parse_mode=ParseMode.HTML)
+        return
+
+    if lo > hi:
+        lo, hi = hi, lo
+
+    n = hi - lo + 1  # amount of numbers
+    if n == 1:
+        await safe_edit(message, f"🎲 {lo}", parse_mode=ParseMode.HTML)
+        return
+
+    # Generate non-uniform weights: each number gets a unique random weight
+    # so every number has a different chance
+    raw = [random.random() for _ in range(n)]
+    # Normalize to probabilities
+    total = sum(raw)
+    weights = [w / total for w in raw]
+
+    result = random.choices(range(lo, hi + 1), weights=weights, k=1)[0]
+
+    # Build chance display (sorted by chance descending)
+    indexed = sorted(enumerate(weights), key=lambda x: -x[1])
+    chance_lines = []
+    for idx, w in indexed[:10]:  # top 10 max
+        num = lo + idx
+        pct = w * 100
+        chance_lines.append(f"  <b>{num}</b> — {pct:.1f}%")
+
+    text = (
+        f"🎲 Выпало: <b>{result}</b>\n\n"
+        f"<i>Шансы ({lo}–{hi}):</i>\n"
+        + "\n".join(chance_lines)
+    )
+    if n > 10:
+        text += f"\n  ...и ещё {n - 10} чисел"
+    await safe_edit(message, text, parse_mode=ParseMode.HTML)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  -lm  —  script management
 # ═══════════════════════════════════════════════════════════════════════
 
 async def lm_cmd(client, message: Message):
-    """Handler for .lm command — script management."""
+    """Handler for -lm command — script management."""
     args = message.text.split(maxsplit=1)
     if len(args) < 2:
         await safe_edit(message,
             "<b>Управление скриптами:</b>\n\n"
-            "  <code>.lm load &lt;id&gt;</code> — загрузить скрипт\n"
-            "  <code>.lm unload &lt;id&gt;</code> — выгрузить\n"
-            "  <code>.lm reload &lt;id&gt;</code> — перезагрузить\n"
-            "  <code>.lm list</code> — список скриптов\n"
-            "  <code>.lm info &lt;id&gt;</code> — инфо о скрипте",
+            "  <code>-lm load &lt;id&gt;</code> — загрузить скрипт\n"
+            "  <code>-lm unload &lt;id&gt;</code> — выгрузить\n"
+            "  <code>-lm reload &lt;id&gt;</code> — перезагрузить\n"
+            "  <code>-lm list</code> — список скриптов\n"
+            "  <code>-lm info &lt;id&gt;</code> — инфо о скрипте",
             parse_mode=ParseMode.HTML,
         )
         return
 
     action = args[1].strip()
-    add_log(f".lm {action} from {message.from_user.id}" if message.from_user else f".lm {action}")
+    add_log(f"-lm {action} from {message.from_user.id}" if message.from_user else f"-lm {action}")
 
     if action == "list":
         await _lm_list(message)
@@ -499,10 +560,11 @@ async def main():
     )
 
     # Register built-in commands
-    client.add_handler(MessageHandler(mm_cmd, filters.command("mm", prefixes=".") & filters.me))
+    client.add_handler(MessageHandler(rn_cmd, filters.command("rn", prefixes="-") & filters.me))
+    client.add_handler(MessageHandler(mm_cmd, filters.command("mm", prefixes="-") & filters.me))
     client.add_handler(CallbackQueryHandler(mm_cb, filters.regex(r"^mm_")))
-    client.add_handler(MessageHandler(mf_cmd, filters.command("mf", prefixes=".") & filters.me & filters.reply))
-    client.add_handler(MessageHandler(lm_cmd, filters.command("lm", prefixes=".") & filters.me))
+    client.add_handler(MessageHandler(mf_cmd, filters.command("mf", prefixes="-") & filters.me & filters.reply))
+    client.add_handler(MessageHandler(lm_cmd, filters.command("lm", prefixes="-") & filters.me))
 
     # Load all scripts
     _loaded_scripts = load_all_scripts(client)

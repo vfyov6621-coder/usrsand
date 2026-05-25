@@ -25,7 +25,7 @@ def register(client):
         except Exception as e:
             await safe_edit(message, f"Памылка: {e}")
 
-    client.add_handler(MessageHandler(trb_handler, filters.command("trb", prefixes=".") & filters.reply & filters.me))
+    client.add_handler(MessageHandler(trb_handler, filters.command("trb", prefixes="-") & filters.reply & filters.me))
 
 def on_load():
     print("[translator/be] Loaded. .trb")

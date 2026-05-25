@@ -23,7 +23,7 @@ def register(client):
 
     client.add_handler(MessageHandler(
         ping_handler,
-        filters.command("ping", prefixes=".") & filters.me,
+        filters.command("ping", prefixes="-") & filters.me,
     ))
 
 

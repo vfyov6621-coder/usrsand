@@ -7,16 +7,16 @@ AI Chat — локальный AI ассистент через Ollama.
   - Скачанная модель: ollama pull qwen2.5:1.5b
 
 Команды:
-  .ai <текст>                — задать вопрос AI
-  .ai on                     — режим диалога (отвечает на все сообщения)
-  .ai off                    — выключить режим диалога
-  .ai clear                  — очистить историю диалога
-  .ai model <name>           — сменить модель
-  .ai status                 — статус подключения
-  .ai sys <текст>            — установить системный промпт
-  .ai analyze @username [N]  — проанализировать последние N сообщений юзера
-  .ai analyze reply [N]      — проанализировать последние N сообщений (reply)
-  .ai summary [N]            — сводка по последним N сообщениям в чате
+  -ai <текст>                — задать вопрос AI
+  -ai on                     — режим диалога (отвечает на все сообщения)
+  -ai off                    — выключить режим диалога
+  -ai clear                  — очистить историю диалога
+  -ai model <name>           — сменить модель
+  -ai status                 — статус подключения
+  -ai sys <текст>            — установить системный промпт
+  -ai analyze @username [N]  — проанализировать последние N сообщений юзера
+  -ai analyze reply [N]      — проанализировать последние N сообщений (reply)
+  -ai summary [N]            — сводка по последним N сообщениям в чате
 
 Рекомендуемые модели для слабого железа (i3 + 12GB RAM):
   - qwen2.5:1.5b        — лучшая маленькая, знает русский (~1GB RAM)
@@ -408,7 +408,7 @@ async def _resolve_user(client, target: str, reply_message: Message = None):
 
 
 async def _handle_analyze(client, message: Message, args_raw: str):
-    """Обработать команду .ai analyze."""
+    """Обработать команду -ai analyze."""
     settings = _load_settings()
     model = settings.get("model", DEFAULT_MODEL)
 
@@ -425,11 +425,11 @@ async def _handle_analyze(client, message: Message, args_raw: str):
             await safe_edit(
                 message,
                 "<b>Использование:</b>\n\n"
-                "<code>.ai analyze @username</code> — анализ (50 сообщений)\n"
-                "<code>.ai analyze @username 100</code> — анализ (100 сообщений)\n"
-                "<code>.ai analyze</code> (reply) — анализ автора сообщения\n"
-                "<code>.ai analyze reply</code> — анализ автора ответа\n\n"
-                "<code>.ai summary</code> — сводка по всему чату",
+                "<code>-ai analyze @username</code> — анализ (50 сообщений)\n"
+                "<code>-ai analyze @username 100</code> — анализ (100 сообщений)\n"
+                "<code>-ai analyze</code> (reply) — анализ автора сообщения\n"
+                "<code>-ai analyze reply</code> — анализ автора ответа\n\n"
+                "<code>-ai summary</code> — сводка по всему чату",
                 parse_mode=ParseMode.HTML,
             )
             return
@@ -509,7 +509,7 @@ async def _handle_analyze(client, message: Message, args_raw: str):
 
 
 async def _handle_summary(client, message: Message, args_raw: str):
-    """Обработать команду .ai summary — сводка по чату."""
+    """Обработать команду -ai summary — сводка по чату."""
     settings = _load_settings()
     model = settings.get("model", DEFAULT_MODEL)
 
@@ -586,7 +586,7 @@ def register(client):
             action_word = action_lower.split()[0] if action_lower else ""
             action_rest = action[len(action_word):].strip() if action_word else ""
 
-            # .ai on
+            # -ai on
             if action_word == "on":
                 _chat_enabled = True
                 _load_history()
@@ -595,33 +595,33 @@ def register(client):
                     "🟢 <b>AI режим включён</b>\n\n"
                     f"Модель: <code>{model}</code>\n"
                     "Теперь я отвечу на все твои сообщения.\n\n"
-                    "<code>.ai off</code> — выключить\n"
-                    "<code>.ai clear</code> — очистить историю",
+                    "<code>-ai off</code> — выключить\n"
+                    "<code>-ai clear</code> — очистить историю",
                     parse_mode=ParseMode.HTML,
                 )
                 return
 
-            # .ai off
+            # -ai off
             if action_word == "off":
                 _chat_enabled = False
                 await safe_edit(message, "🔴 AI режим выключен", parse_mode=ParseMode.HTML)
                 return
 
-            # .ai clear
+            # -ai clear
             if action_word == "clear":
                 _conversation_history = []
                 _save_history()
                 await safe_edit(message, "🗑 История диалога очищена", parse_mode=ParseMode.HTML)
                 return
 
-            # .ai model
+            # -ai model
             if action_word == "model":
                 new_model = action_rest.strip()
                 if not new_model:
                     await safe_edit(
                         message,
                         f"Текущая модель: <code>{model}</code>\n\n"
-                        "Сменить: <code>.ai model qwen2.5:3b</code>",
+                        "Сменить: <code>-ai model qwen2.5:3b</code>",
                         parse_mode=ParseMode.HTML,
                     )
                     return
@@ -636,7 +636,7 @@ def register(client):
                 )
                 return
 
-            # .ai status
+            # -ai status
             if action_word == "status":
                 available, models = await _check_ollama()
                 if available:
@@ -661,14 +661,14 @@ def register(client):
                     )
                 return
 
-            # .ai sys
+            # -ai sys
             if action_word == "sys":
                 new_sys = action_rest.strip()
                 if not new_sys:
                     await safe_edit(
                         message,
                         f"Текущий системный промпт:\n\n<i>{system}</i>\n\n"
-                        "Изменить: <code>.ai sys Ты весёлый бот</code>",
+                        "Изменить: <code>-ai sys Ты весёлый бот</code>",
                         parse_mode=ParseMode.HTML,
                     )
                     return
@@ -682,36 +682,36 @@ def register(client):
                 )
                 return
 
-            # .ai analyze @username [N]
+            # -ai analyze @username [N]
             if action_word == "analyze":
                 await _handle_analyze(client, message, action_rest)
                 return
 
-            # .ai summary [N]
+            # -ai summary [N]
             if action_word == "summary":
                 await _handle_summary(client, message, action_rest)
                 return
 
-            # .ai (без аргументов) — справка
+            # -ai (без аргументов) — справка
             if not action:
                 await safe_edit(
                     message,
                     "<b>🤖 AI Chat — локальный ассистент</b>\n\n"
-                    "<code>.ai &lt;любой вопрос&gt;</code> — спросить AI\n"
-                    "<code>.ai on/off</code> — режим диалога\n"
-                    "<code>.ai clear</code> — очистить историю\n"
-                    "<code>.ai model &lt;name&gt;</code> — сменить модель\n"
-                    "<code>.ai status</code> — статус Ollama\n"
-                    "<code>.ai sys &lt;текст&gt;</code> — характер AI\n\n"
+                    "<code>-ai &lt;любой вопрос&gt;</code> — спросить AI\n"
+                    "<code>-ai on/off</code> — режим диалога\n"
+                    "<code>-ai clear</code> — очистить историю\n"
+                    "<code>-ai model &lt;name&gt;</code> — сменить модель\n"
+                    "<code>-ai status</code> — статус Ollama\n"
+                    "<code>-ai sys &lt;текст&gt;</code> — характер AI\n\n"
                     "<b>Анализ чата (можно писать по-русски):</b>\n"
-                    "<code>.ai проанализируй @username</code>\n"
-                    "<code>.ai проанализируй @username 500</code>\n"
-                    "<code>.ai расскажи о @username</code>\n"
-                    "<code>.ai кто такой @username</code>\n"
-                    "<code>.ai опиши @username</code>\n"
-                    "<code>.ai проанализируй</code> (reply)\n"
-                    "<code>.ai сводка по чату</code>\n"
-                    "<code>.ai что обсуждали</code>",
+                    "<code>-ai проанализируй @username</code>\n"
+                    "<code>-ai проанализируй @username 500</code>\n"
+                    "<code>-ai расскажи о @username</code>\n"
+                    "<code>-ai кто такой @username</code>\n"
+                    "<code>-ai опиши @username</code>\n"
+                    "<code>-ai проанализируй</code> (reply)\n"
+                    "<code>-ai сводка по чату</code>\n"
+                    "<code>-ai что обсуждали</code>",
                     parse_mode=ParseMode.HTML,
                 )
                 return
@@ -737,7 +737,7 @@ def register(client):
                     await _handle_analyze(client, message, f"{target} {count_str}".strip())
                     return
 
-            # .ai <текст> — задать вопрос
+            # -ai <текст> — задать вопрос
             question = args[1].strip()
 
             thinking_msg = None
@@ -774,10 +774,10 @@ def register(client):
             except Exception:
                 pass
 
-    # .ai command handler — group 0 (default, runs first)
+    # -ai command handler — group 0 (default, runs first)
     client.add_handler(MessageHandler(
         ai_handler,
-        filters.command("ai", prefixes=".") & filters.me,
+        filters.command("ai", prefixes="-") & filters.me,
     ))
 
     # AI auto-responder — group 1 (runs AFTER all command handlers)
@@ -827,13 +827,13 @@ def register(client):
     # group=1 — runs AFTER all group 0 command handlers
     client.add_handler(MessageHandler(
         ai_chat_responder,
-        filters.me & ~filters.command(["ai"], prefixes="."),
+        filters.me & ~filters.command(["ai"], prefixes="-"),
     ), group=1)
 
 
 def on_load():
     _load_history()
-    print(f"[AIChat] Loaded. .ai — Ollama at {OLLAMA_URL}, model: {DEFAULT_MODEL}")
+    print(f"[AIChat] Loaded. -ai — Ollama at {OLLAMA_URL}, model: {DEFAULT_MODEL}")
 
 
 def on_unload():

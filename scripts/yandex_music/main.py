@@ -71,7 +71,7 @@ def _get_client():
         return _yandex_client
     token = _get_token()
     if not token:
-        raise ValueError("Токен не установлен. Используй .ya token <токен>")
+        raise ValueError("Токен не установлен. Используй -ya token <токен>")
     from yandex_music import Client
     _yandex_client = Client(token).init()
     return _yandex_client
@@ -254,17 +254,17 @@ async def _cmd_help(message) -> None:
 
     text = (
         "<b>\ud83c\udfb5 Яндекс Музыка</b>\n\n"
-        "<code>.ya s</code> <i>запрос</i> \u2014 поиск треков\n"
-        "<code>.ya d</code> <i>id</i> \u2014 скачать/отправить трек\n"
-        "<code>.ya l</code> <i>id</i> \u2014 текст песни\n"
-        "<code>.ya a</code> <i>запрос</i> \u2014 поиск исполнителя\n"
-        "<code>.ya b</code> <i>запрос</i> \u2014 поиск альбома\n"
-        "<code>.ya liked</code> \u2014 любимые треки\n"
-        "<code>.ya chart</code> \u2014 чарт\n"
-        "<code>.ya now</code> \u2014 что сейчас играет\n"
-        "<code>.ya bar</code> \u2014 стиль прогресс-бара\n"
-        "<code>.ya debug</code> \u2014 диагностика API\n"
-        "<code>.ya token</code> <i>токен</i> \u2014 установить токен\n\n"
+        "<code>-ya s</code> <i>запрос</i> \u2014 поиск треков\n"
+        "<code>-ya d</code> <i>id</i> \u2014 скачать/отправить трек\n"
+        "<code>-ya l</code> <i>id</i> \u2014 текст песни\n"
+        "<code>-ya a</code> <i>запрос</i> \u2014 поиск исполнителя\n"
+        "<code>-ya b</code> <i>запрос</i> \u2014 поиск альбома\n"
+        "<code>-ya liked</code> \u2014 любимые треки\n"
+        "<code>-ya chart</code> \u2014 чарт\n"
+        "<code>-ya now</code> \u2014 что сейчас играет\n"
+        "<code>-ya bar</code> \u2014 стиль прогресс-бара\n"
+        "<code>-ya debug</code> \u2014 диагностика API\n"
+        "<code>-ya token</code> <i>токен</i> \u2014 установить токен\n\n"
         "<i>Получить токен: </i>"
         '<a href="https://oauth.yandex.ru/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d">'
         "OAuth авторизация</a>"
@@ -284,7 +284,7 @@ async def _cmd_search(client, message) -> None:
     if len(parts) < 3:
         try:
             await message.edit_text(
-                "\u274c Использование: <code>.ya s запрос</code>",
+                "\u274c Использование: <code>-ya s запрос</code>",
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
@@ -344,7 +344,7 @@ async def _cmd_download(client, message) -> None:
     if len(parts) < 3:
         try:
             await message.edit_text(
-                "\u274c Использование: <code>.ya d id_трека</code>",
+                "\u274c Использование: <code>-ya d id_трека</code>",
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
@@ -384,7 +384,7 @@ async def _cmd_lyrics(message) -> None:
     if len(parts) < 3:
         try:
             await message.edit_text(
-                "\u274c Использование: <code>.ya l id_трека</code>",
+                "\u274c Использование: <code>-ya l id_трека</code>",
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
@@ -466,7 +466,7 @@ async def _cmd_artist(client, message) -> None:
     if len(parts) < 3:
         try:
             await message.edit_text(
-                "\u274c Использование: <code>.ya a запрос</code>",
+                "\u274c Использование: <code>-ya a запрос</code>",
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
@@ -558,7 +558,7 @@ async def _cmd_album(client, message) -> None:
     if len(parts) < 3:
         try:
             await message.edit_text(
-                "\u274c Использование: <code>.ya b запрос</code>",
+                "\u274c Использование: <code>-ya b запрос</code>",
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
@@ -1583,7 +1583,7 @@ def _fetch_ynison_state():
 
 
 async def _cmd_bar(client, message) -> None:
-    """Set progress bar preset. Usage: .ya bar | .ya bar 1"""
+    """Set progress bar preset. Usage: -ya bar | -ya bar 1"""
     from pyrogram.enums import ParseMode
 
     parts = message.text.split()
@@ -1593,7 +1593,7 @@ async def _cmd_bar(client, message) -> None:
         cfg = _load_bar_cfg()
         current = cfg.get("preset", -1)
 
-        # ── .ya bar (no arg) → show list ──
+        # ── -ya bar (no arg) → show list ──
         if not arg:
             lines = ["<b>Стиль прогресс-бара</b>\n"]
             for pid, (name, desc) in BAR_PRESETS.items():
@@ -1603,15 +1603,15 @@ async def _cmd_bar(client, message) -> None:
             await message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML)
             return
 
-        # ── .ya bar N → set preset ──
+        # ── -ya bar N → set preset ──
         try:
             preset = int(arg)
         except ValueError:
-            await message.edit_text("❌ Укажи номер. Смотри: <code>.ya bar</code>",
+            await message.edit_text("❌ Укажи номер. Смотри: <code>-ya bar</code>",
                                     parse_mode=ParseMode.HTML)
             return
         if preset not in BAR_PRESETS:
-            await message.edit_text(f"❌ Нет пресета {preset}. Смотри: <code>.ya bar</code>",
+            await message.edit_text(f"❌ Нет пресета {preset}. Смотри: <code>-ya bar</code>",
                                     parse_mode=ParseMode.HTML)
             return
         cfg["preset"] = preset
@@ -1919,7 +1919,7 @@ async def _cmd_token(message) -> None:
     if len(parts) < 3:
         try:
             await message.edit_text(
-                "\u274c Использование: <code>.ya token YOUR_TOKEN</code>\n\n"
+                "\u274c Использование: <code>-ya token YOUR_TOKEN</code>\n\n"
                 '<i>Получить токен: </i>'
                 '<a href="https://oauth.yandex.ru/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d">'
                 "OAuth авторизация</a>",
@@ -1965,7 +1965,7 @@ def register(client):
     log = logging.getLogger("sandusr.scripts.yandex_music")
 
     async def _dispatcher(client, message: Message):
-        """Single entry point: .ya [sub-command] [args...]"""
+        """Single entry point: -ya [sub-command] [args...]"""
         parts = message.text.split()
         sub = parts[1] if len(parts) > 1 else ""
 
@@ -2020,7 +2020,7 @@ def register(client):
 
     client.add_handler(MessageHandler(
         _dispatcher,
-        filters.command("ya", prefixes=".") & filters.me,
+        filters.command("ya", prefixes="-") & filters.me,
     ))
 
     client.add_handler(CallbackQueryHandler(

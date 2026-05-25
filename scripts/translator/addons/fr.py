@@ -25,7 +25,7 @@ def register(client):
         except Exception as e:
             await safe_edit(message, f"Erreur: {e}")
 
-    client.add_handler(MessageHandler(trf_handler, filters.command("trf", prefixes=".") & filters.reply & filters.me))
+    client.add_handler(MessageHandler(trf_handler, filters.command("trf", prefixes="-") & filters.reply & filters.me))
 
 def on_load():
     print("[translator/fr] Loaded. .trf")

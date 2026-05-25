@@ -1,4 +1,4 @@
-"""Notes — quick notes in Telegram. .note save/get/list/del/set, .n <name>"""
+"""Notes — quick notes in Telegram. -note save/get/list/del/set, -n <name>"""
 
 import os
 import json
@@ -40,12 +40,12 @@ def register(client):
             if len(args) < 2:
                 await safe_edit(message,
                     "<b>📝 Заметки</b>\n\n"
-                    "<code>.note save &lt;имя&gt; &lt;текст&gt;</code>\n"
-                    "<code>.note set &lt;имя&gt;</code> (ответ на соо)\n"
-                    "<code>.note get &lt;имя&gt;</code>\n"
-                    "<code>.note list</code>\n"
-                    "<code>.note del &lt;имя&gt;</code>\n\n"
-                    "<code>.n &lt;имя&gt;</code> — быстрый вызов",
+                    "<code>-note save &lt;имя&gt; &lt;текст&gt;</code>\n"
+                    "<code>-note set &lt;имя&gt;</code> (ответ на соо)\n"
+                    "<code>-note get &lt;имя&gt;</code>\n"
+                    "<code>-note list</code>\n"
+                    "<code>-note del &lt;имя&gt;</code>\n\n"
+                    "<code>-n &lt;имя&gt;</code> — быстрый вызов",
                     parse_mode=ParseMode.HTML,
                 )
                 return
@@ -55,7 +55,7 @@ def register(client):
             if action == "list":
                 notes = _load()
                 if not notes:
-                    await safe_edit(message, "📝 Заметок нет.\n\n<code>.note save имя текст</code>", parse_mode=ParseMode.HTML)
+                    await safe_edit(message, "📝 Заметок нет.\n\n<code>-note save имя текст</code>", parse_mode=ParseMode.HTML)
                     return
                 lines = "\n".join(f"  {i}. <code>{k}</code>" for i, k in enumerate(sorted(notes.keys()), 1))
                 await safe_edit(message, f"📝 <b>Заметки ({len(notes)}):</b>\n\n{lines}", parse_mode=ParseMode.HTML)
@@ -63,7 +63,7 @@ def register(client):
 
             if action == "del":
                 if len(args) < 3:
-                    await safe_edit(message, "❌ <code>.note del &lt;имя&gt;</code>", parse_mode=ParseMode.HTML)
+                    await safe_edit(message, "❌ <code>-note del &lt;имя&gt;</code>", parse_mode=ParseMode.HTML)
                     return
                 name = args[2].strip()
                 notes = _load()
@@ -77,7 +77,7 @@ def register(client):
 
             if action == "get":
                 if len(args) < 3:
-                    await safe_edit(message, "❌ <code>.note get &lt;имя&gt;</code>", parse_mode=ParseMode.HTML)
+                    await safe_edit(message, "❌ <code>-note get &lt;имя&gt;</code>", parse_mode=ParseMode.HTML)
                     return
                 name = args[2].strip()
                 notes = _load()
@@ -89,7 +89,7 @@ def register(client):
 
             if action == "set":
                 if len(args) < 3:
-                    await safe_edit(message, "❌ <code>.note set &lt;имя&gt;</code> (ответ на соо)", parse_mode=ParseMode.HTML)
+                    await safe_edit(message, "❌ <code>-note set &lt;имя&gt;</code> (ответ на соо)", parse_mode=ParseMode.HTML)
                     return
                 name = args[2].strip()
                 reply = message.reply_to_message
@@ -108,7 +108,7 @@ def register(client):
 
             if action == "save":
                 if len(args) < 3:
-                    await safe_edit(message, "❌ <code>.note save &lt;имя&gt; &lt;текст&gt;</code>", parse_mode=ParseMode.HTML)
+                    await safe_edit(message, "❌ <code>-note save &lt;имя&gt; &lt;текст&gt;</code>", parse_mode=ParseMode.HTML)
                     return
                 rest = args[2].strip()
                 parts = rest.split(maxsplit=1)
@@ -123,7 +123,7 @@ def register(client):
                 await safe_edit(message, f"✅ Заметка <b>{name}</b> сохранена", parse_mode=ParseMode.HTML)
                 return
 
-            await safe_edit(message, "❌ Неизвестное действие. .note для справки", parse_mode=ParseMode.HTML)
+            await safe_edit(message, "❌ Неизвестное действие. -note для справки", parse_mode=ParseMode.HTML)
 
         except Exception as e:
             log.error(f"note error: {e}", exc_info=True)
@@ -144,13 +144,13 @@ def register(client):
 
     client.add_handler(MessageHandler(
         note_handler,
-        filters.command("note", prefixes=".") & filters.me,
+        filters.command("note", prefixes="-") & filters.me,
     ))
     client.add_handler(MessageHandler(
         n_shortcut,
-        filters.command("n", prefixes=".") & filters.me,
+        filters.command("n", prefixes="-") & filters.me,
     ))
 
 
 def on_load():
-    print("[notes] Loaded. .note save/get/list/del/set, .n")
+    print("[notes] Loaded. -note save/get/list/del/set, .n")

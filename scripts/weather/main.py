@@ -1,4 +1,4 @@
-"""Weather — weather info with ASCII art. .wea <city>"""
+"""Weather — weather info with ASCII art. -wea <city>"""
 
 import asyncio
 import urllib.request
@@ -49,7 +49,7 @@ def register(client):
         try:
             args = message.text.split(maxsplit=1)
             if len(args) < 2:
-                await safe_edit(message, "<b>🌦 Погода</b>\n\n<code>.wea &lt;город&gt;</code>", parse_mode=ParseMode.HTML)
+                await safe_edit(message, "<b>🌦 Погода</b>\n\n<code>-wea &lt;город&gt;</code>", parse_mode=ParseMode.HTML)
                 return
 
             city = args[1].strip()
@@ -109,9 +109,9 @@ def register(client):
 
     client.add_handler(MessageHandler(
         wea_handler,
-        filters.command("wea", prefixes=".") & filters.me,
+        filters.command("wea", prefixes="-") & filters.me,
     ))
 
 
 def on_load():
-    print("[weather] Loaded. .wea <city>")
+    print("[weather] Loaded. -wea <city>")
