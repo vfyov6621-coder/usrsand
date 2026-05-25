@@ -869,13 +869,6 @@ def _generate_now_cover(cover_uri: str, title: str = "", artists: str = "",
                 draw.rounded_rectangle([20, bar_y, 20 + prog_w, bar_y + bar_h],
                                       radius=1, fill=(255, 255, 255))
 
-        # Album
-        album_text = album or ""
-        if album_text and len(album_text) > 45:
-            album_text = album_text[:43] + "..."
-        if album_text:
-            draw.text((20, time_y + 30), album_text, fill=(180, 180, 180), font=font_album)
-
         img.convert("RGB").save(tmp_out, "PNG")
         return tmp_out
 
