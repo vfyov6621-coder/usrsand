@@ -1583,7 +1583,7 @@ def _fetch_ynison_state():
 
 
 async def _cmd_bar(client, message) -> None:
-    """Set progress bar preset. Usage: .ya bar -list | .ya bar -N"""
+    """Set progress bar preset. Usage: .ya bar | .ya bar 1"""
     from pyrogram.enums import ParseMode
 
     parts = message.text.split()
@@ -1593,45 +1593,31 @@ async def _cmd_bar(client, message) -> None:
         cfg = _load_bar_cfg()
         current = cfg.get("preset", -1)
 
-        # ── .ya bar -list ──
-        if arg == "-list":
+        # ── .ya bar (no arg) → show list ──
+        if not arg:
             lines = ["<b>Стиль прогресс-бара</b>\n"]
             for pid, (name, desc) in BAR_PRESETS.items():
                 tag = " ✓" if pid == current else ""
-                if pid == -1:
-                    lines.append(f"<code>.ya bar -1</code>  {name}{tag}")
-                else:
-                    lines.append(f"<code>.ya bar -{pid}</code>  {name}{tag}")
+                lines.append(f"  {name}  <code>{pid}</code>{tag}")
             lines.append(f"\n<i>Текущий: {BAR_PRESETS[current][0]}</i>")
             await message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML)
             return
 
-        # ── .ya bar -N ──
-        if arg.startswith("-"):
-            try:
-                preset = int(arg[1:])
-            except ValueError:
-                await message.edit_text("❌ Использование: <code>.ya bar -N</code> или <code>.ya bar -list</code>",
-                                        parse_mode=ParseMode.HTML)
-                return
-            if preset not in BAR_PRESETS:
-                await message.edit_text(f"❌ Нет пресета {preset}. Смотри: <code>.ya bar -list</code>",
-                                        parse_mode=ParseMode.HTML)
-                return
-            cfg["preset"] = preset
-            _save_bar_cfg(cfg)
-            name = BAR_PRESETS[preset][0]
-            await message.edit_text(f"✓ Прогресс-бар: {name}", parse_mode=ParseMode.HTML)
+        # ── .ya bar N → set preset ──
+        try:
+            preset = int(arg)
+        except ValueError:
+            await message.edit_text("❌ Укажи номер. Смотри: <code>.ya bar</code>",
+                                    parse_mode=ParseMode.HTML)
             return
-
-        # ── no arg → show current ──
-        name = BAR_PRESETS.get(current, ("?", ""))[0]
-        await message.edit_text(
-            f"<b>Текущий стиль:</b> {name}\n\n"
-            f"<code>.ya bar -list</code> — список стилей\n"
-            f"<code>.ya bar -N</code> — выбрать стиль",
-            parse_mode=ParseMode.HTML,
-        )
+        if preset not in BAR_PRESETS:
+            await message.edit_text(f"❌ Нет пресета {preset}. Смотри: <code>.ya bar</code>",
+                                    parse_mode=ParseMode.HTML)
+            return
+        cfg["preset"] = preset
+        _save_bar_cfg(cfg)
+        name = BAR_PRESETS[preset][0]
+        await message.edit_text(f"✓ Прогресс-бар: {name}", parse_mode=ParseMode.HTML)
     except Exception as e:
         log.error("_cmd_bar error: %s", e, exc_info=True)
         try:
