@@ -1231,6 +1231,16 @@ def _fetch_ynison_state():
 
             response = await _ws_recv(reader, leftover)
             log.info("Ynison state response (%d bytes): %s", len(response) if response else 0, response[:2000] if response else "empty")
+            # Save full response to file for debugging
+            if response:
+                try:
+                    debug_dir = os.path.join(SCRIPT_DIR, "logs")
+                    os.makedirs(debug_dir, exist_ok=True)
+                    with open(os.path.join(debug_dir, "ynison_response.json"), "w", encoding="utf-8") as f:
+                        f.write(response)
+                    log.info("Ynison: full response saved to logs/ynison_response.json")
+                except Exception as e:
+                    log.debug("Ynison: failed to save debug file: %s", e)
             writer.close()
             return response
 
