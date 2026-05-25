@@ -1,0 +1,7 @@
+{
+  "name": "Predictions",
+  "version": "1.0",
+  "author": "sandusr",
+  "description": "Тупые предсказания каждые N сообщений",
+  "command": "-pred"
+}
