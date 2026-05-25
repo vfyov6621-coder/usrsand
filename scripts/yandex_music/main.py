@@ -13,6 +13,18 @@ from pathlib import Path
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 TOKEN_FILE = os.path.join(SCRIPT_DIR, "token.txt")
+BAR_CFG_FILE = os.path.join(SCRIPT_DIR, "bar_settings.json")
+
+# Progress bar preset names
+BAR_PRESETS = {
+    -1: ("\U0001f3b2 Авто", "рандомный пресет для каждого трека"),
+    0:  ("\u2728 Neon Glow", "неоновое свечение"),
+    1:  ("\U0001f538 Thick Pill", "толстая капсула"),
+    2:  ("\u26a1 Dual Layer", "двойной слой"),
+    3:  ("\U0001f4e6 Segmented", "сегментированный"),
+    4:  ("\u2b24 Dot Marker", "точка-маркер"),
+    5:  ("\u2728 Minimal", "минималистичный акцент"),
+}
 
 log = logging.getLogger("sandusr.scripts.yandex_music")
 
@@ -33,6 +45,23 @@ def _save_token(token: str) -> None:
     """Save Yandex Music token to file."""
     with open(TOKEN_FILE, "w", encoding="utf-8") as f:
         f.write(token.strip())
+
+
+def _load_bar_cfg() -> dict:
+    """Load progress bar settings from config file."""
+    if os.path.exists(BAR_CFG_FILE):
+        try:
+            with open(BAR_CFG_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {"preset": -1}
+
+
+def _save_bar_cfg(cfg: dict) -> None:
+    """Save progress bar settings to config file."""
+    with open(BAR_CFG_FILE, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
 
 
 def _get_client():
@@ -233,6 +262,7 @@ async def _cmd_help(message) -> None:
         "<code>.ya liked</code> \u2014 любимые треки\n"
         "<code>.ya chart</code> \u2014 чарт\n"
         "<code>.ya now</code> \u2014 что сейчас играет\n"
+        "<code>.ya bar</code> \u2014 стиль прогресс-бара\n"
         "<code>.ya debug</code> \u2014 диагностика API\n"
         "<code>.ya token</code> <i>токен</i> \u2014 установить токен\n\n"
         "<i>Получить токен: </i>"
@@ -751,7 +781,7 @@ async def _cmd_chart(client, message) -> None:
 
 def _generate_now_cover(cover_uri: str, title: str = "", artists: str = "",
                          progress_ms: int = 0, duration_ms: int = 0,
-                         album: str = "") -> str | None:
+                         album: str = "", bar_preset: int = -1) -> str | None:
     """Generate 400x400 now-playing card with cover + text overlay.
 
     Layout:
@@ -840,7 +870,11 @@ def _generate_now_cover(cover_uri: str, title: str = "", artists: str = "",
 
         # Time: progress / duration
         def _fmt_ms(ms):
-            if not ms:
+            try:
+                ms = int(ms)
+            except (TypeError, ValueError):
+                return "0:00"
+            if ms <= 0:
                 return "0:00"
             s = ms // 1000
             return f"{s // 60}:{s % 60:02d}"
@@ -854,17 +888,24 @@ def _generate_now_cover(cover_uri: str, title: str = "", artists: str = "",
         dur_w = dur_bbox[2] - dur_bbox[0]
         draw.text((380 - dur_w, time_y), dur_str, fill=(200, 200, 200), font=font_time)
 
-        # ── Custom progress bar per track ──
+        # ── Custom progress bar ──
+        try:
+            progress_ms = int(progress_ms) if progress_ms else 0
+            duration_ms = int(duration_ms) if duration_ms else 0
+        except (TypeError, ValueError):
+            progress_ms = 0
+            duration_ms = 0
+
         if duration_ms > 0:
             import hashlib, colorsys
 
             bar_y = time_y + 20
             bar_x = 20
             bar_w = 360
-            prog_ratio = min(progress_ms / duration_ms, 1.0) if duration_ms else 0
+            prog_ratio = min(progress_ms / duration_ms, 1.0)
             prog_w = max(4, int(bar_w * prog_ratio))
 
-            # Deterministic preset from track + artist
+            # Deterministic color from track + artist
             seed = hashlib.sha256(f"{title}|{artists}".encode()).hexdigest()
             hue = (int(seed[:8], 16) % 360)
             sat = 0.6 + (int(seed[8:12], 16) % 30) / 100   # 0.60–0.90
@@ -872,7 +913,11 @@ def _generate_now_cover(cover_uri: str, title: str = "", artists: str = "",
             r, g, b = colorsys.hsv_to_rgb(hue / 360, sat, val)
             accent = (int(r * 255), int(g * 255), int(b * 255))
 
-            preset = int(seed[16:20], 16) % 6
+            # Use saved preset if set, otherwise hash-based
+            if bar_preset >= 0:
+                preset = bar_preset
+            else:
+                preset = int(seed[16:20], 16) % 6
 
             # --- Preset 0: Neon Glow ---
             if preset == 0:
@@ -880,9 +925,13 @@ def _generate_now_cover(cover_uri: str, title: str = "", artists: str = "",
                 draw.rounded_rectangle([bar_x, bar_y + 2, bar_x + bar_w, bar_y + 2 + bg_h],
                                       radius=1, fill=(60, 60, 60))
                 if prog_ratio > 0:
-                    # Wide glow
-                    draw.rounded_rectangle([bar_x, bar_y, bar_x + prog_w, bar_y + 7],
-                                          radius=3, fill=(*accent, 60))
+                    # Wide glow (semi-transparent overlay)
+                    glow = Image.new("RGBA", img.size, (0, 0, 0, 0))
+                    glow_draw = ImageDraw.Draw(glow)
+                    glow_draw.rounded_rectangle([bar_x, bar_y, bar_x + prog_w, bar_y + 7],
+                                               radius=3, fill=(*accent, 60))
+                    img = Image.alpha_composite(img, glow)
+                    draw = ImageDraw.Draw(img)
                     # Thin bright core
                     draw.rounded_rectangle([bar_x, bar_y + 2, bar_x + prog_w, bar_y + 5],
                                           radius=1, fill=accent)
@@ -1533,6 +1582,45 @@ def _fetch_ynison_state():
     }
 
 
+async def _cmd_bar(client, message) -> None:
+    """Show progress bar preset selector with inline keyboard."""
+    from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+    cfg = _load_bar_cfg()
+    current = cfg.get("preset", -1)
+    current_name = BAR_PRESETS.get(current, ("?", ""))[0]
+
+    rows = []
+    # Row: Auto
+    rows.append([InlineKeyboardButton(
+        f"{'✓ ' if current == -1 else ''}{BAR_PRESETS[-1][0]}",
+        callback_data="ym_bar:-1",
+    )])
+    # Rows: presets 0-5, two per row
+    for i in range(0, 6, 2):
+        row = []
+        for j in (i, i + 1):
+            row.append(InlineKeyboardButton(
+                f"{'✓ ' if current == j else ''}{BAR_PRESETS[j][0]}",
+                callback_data=f"ym_bar:{j}",
+            ))
+        rows.append(row)
+
+    markup = InlineKeyboardMarkup(rows)
+    text = (
+        f"<b>\U0001f3a7 Стиль прогресс-бара</b>\n\n"
+        f"<b>Текущий:</b> {current_name}\n\n"
+        f"<i>Выбери стиль для карточки</i> <code>.ya now</code>"
+    )
+    try:
+        await message.edit_text(text, parse_mode="HTML", reply_markup=markup)
+    except Exception:
+        try:
+            await message.reply(text, parse_mode="HTML", reply_markup=markup)
+        except Exception:
+            pass
+
+
 async def _cmd_now(client, message) -> None:
     """Show currently playing track from Yandex Music with cover card."""
     from pyrogram.enums import ParseMode
@@ -1599,6 +1687,20 @@ async def _cmd_now(client, message) -> None:
         ynison_duration = getattr(track, "_ynison_duration", None) or 0
         ynison_device = getattr(track, "_ynison_device", None)
 
+        # Force int (Ynison may return strings)
+        try:
+            ynison_progress = int(ynison_progress)
+        except (TypeError, ValueError):
+            ynison_progress = 0
+        try:
+            ynison_duration = int(ynison_duration)
+        except (TypeError, ValueError):
+            ynison_duration = 0
+
+        # Progress bar preset from config
+        bar_cfg = await _run_sync(_load_bar_cfg)
+        bar_preset = int(bar_cfg.get("preset", -1))
+
         # Artist link (first artist)
         artist_url = ""
         if track.artists:
@@ -1614,13 +1716,15 @@ async def _cmd_now(client, message) -> None:
         cover_uri = getattr(track, "cover_uri", None)
         cover_path = None
         if cover_uri:
+            dur = ynison_duration or (track.duration_ms or 0)
             cover_path = await _run_sync(
                 _generate_now_cover, cover_uri,
                 title=track.title or "",
                 artists=artists_plain,
-                progress_ms=int(ynison_progress) if ynison_progress else 0,
-                duration_ms=int(ynison_duration) if ynison_duration else (track.duration_ms or 0),
+                progress_ms=ynison_progress,
+                duration_ms=dur,
                 album=album,
+                bar_preset=bar_preset,
             )
 
         # ── build caption ──
@@ -1877,6 +1981,8 @@ def register(client):
                 await _cmd_chart(client, message)
             elif sub in ("now", "np", "playing"):
                 await _cmd_now(client, message)
+            elif sub in ("bar", "bars", "progressbar"):
+                await _cmd_bar(client, message)
             elif sub == "debug":
                 await _cmd_debug(message)
             elif sub == "token":
@@ -1888,9 +1994,57 @@ def register(client):
             await safe_edit(message, f"\u274c Неожиданная ошибка: {e}")
 
     async def _on_callback(client, callback_query):
-        """Handle inline button presses (ym_dl:track_id)."""
+        """Handle inline button presses (ym_dl:track_id, ym_bar:N)."""
         data = callback_query.data
-        if not data or not data.startswith("ym_dl:"):
+        if not data:
+            return
+
+        # ── Progress bar preset selection ──
+        if data.startswith("ym_bar:"):
+            try:
+                preset = int(data.split(":", 1)[1])
+                if preset < -1 or preset > 5:
+                    preset = -1
+            except (ValueError, IndexError):
+                preset = -1
+
+            cfg = _load_bar_cfg()
+            cfg["preset"] = preset
+            _save_bar_cfg(cfg)
+
+            name = BAR_PRESETS.get(preset, ("?", ""))[0]
+            await callback_query.answer(f"✓ {name}", show_alert=False)
+
+            # Rebuild keyboard with updated selection
+            from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+            rows = []
+            rows.append([InlineKeyboardButton(
+                f"{'✓ ' if preset == -1 else ''}{BAR_PRESETS[-1][0]}",
+                callback_data="ym_bar:-1",
+            )])
+            for i in range(0, 6, 2):
+                row = []
+                for j in (i, i + 1):
+                    row.append(InlineKeyboardButton(
+                        f"{'✓ ' if preset == j else ''}{BAR_PRESETS[j][0]}",
+                        callback_data=f"ym_bar:{j}",
+                    ))
+                rows.append(row)
+            markup = InlineKeyboardMarkup(rows)
+            text = (
+                f"<b>\U0001f3a7 Стиль прогресс-бара</b>\n\n"
+                f"<b>Текущий:</b> {name}\n\n"
+                f"<i>Выбери стиль для карточки</i> <code>.ya now</code>"
+            )
+            try:
+                await callback_query.message.edit_text(
+                    text, parse_mode="HTML", reply_markup=markup)
+            except Exception:
+                pass
+            return
+
+        # ── Track download callback ──
+        if not data.startswith("ym_dl:"):
             return
 
         track_id = data.split(":", 1)[1]
@@ -1914,7 +2068,7 @@ def register(client):
 
     client.add_handler(CallbackQueryHandler(
         _on_callback,
-        filters.regex(r"^ym_dl:"),
+        filters.regex(r"^ym_(dl|bar):"),
     ))
 
 
