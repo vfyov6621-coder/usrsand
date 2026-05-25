@@ -760,7 +760,7 @@ def _generate_now_cover(cover_uri: str, title: str = "", artists: str = "",
       - Track title (bold, white)
       - Artist name (white, smaller)
       - Progress / Duration (left / right)
-      - Album name (small, white italic)
+      - Custom progress bar (unique preset per track)
 
     Returns path to the generated image or None on failure.
     """
@@ -854,20 +854,98 @@ def _generate_now_cover(cover_uri: str, title: str = "", artists: str = "",
         dur_w = dur_bbox[2] - dur_bbox[0]
         draw.text((380 - dur_w, time_y), dur_str, fill=(200, 200, 200), font=font_time)
 
-        # Progress bar
+        # ── Custom progress bar per track ──
         if duration_ms > 0:
+            import hashlib, colorsys
+
             bar_y = time_y + 20
+            bar_x = 20
             bar_w = 360
-            bar_h = 3
-            # Background bar
-            draw.rounded_rectangle([20, bar_y, 20 + bar_w, bar_y + bar_h],
-                                  radius=1, fill=(100, 100, 100))
-            # Progress bar
             prog_ratio = min(progress_ms / duration_ms, 1.0) if duration_ms else 0
-            if prog_ratio > 0:
-                prog_w = max(4, int(bar_w * prog_ratio))
-                draw.rounded_rectangle([20, bar_y, 20 + prog_w, bar_y + bar_h],
-                                      radius=1, fill=(255, 255, 255))
+            prog_w = max(4, int(bar_w * prog_ratio))
+
+            # Deterministic preset from track + artist
+            seed = hashlib.sha256(f"{title}|{artists}".encode()).hexdigest()
+            hue = (int(seed[:8], 16) % 360)
+            sat = 0.6 + (int(seed[8:12], 16) % 30) / 100   # 0.60–0.90
+            val = 0.85 + (int(seed[12:16], 16) % 15) / 100  # 0.85–1.00
+            r, g, b = colorsys.hsv_to_rgb(hue / 360, sat, val)
+            accent = (int(r * 255), int(g * 255), int(b * 255))
+
+            preset = int(seed[16:20], 16) % 6
+
+            # --- Preset 0: Neon Glow ---
+            if preset == 0:
+                bg_h = 3
+                draw.rounded_rectangle([bar_x, bar_y + 2, bar_x + bar_w, bar_y + 2 + bg_h],
+                                      radius=1, fill=(60, 60, 60))
+                if prog_ratio > 0:
+                    # Wide glow
+                    draw.rounded_rectangle([bar_x, bar_y, bar_x + prog_w, bar_y + 7],
+                                          radius=3, fill=(*accent, 60))
+                    # Thin bright core
+                    draw.rounded_rectangle([bar_x, bar_y + 2, bar_x + prog_w, bar_y + 5],
+                                          radius=1, fill=accent)
+
+            # --- Preset 1: Thick Pill ---
+            elif preset == 1:
+                bar_h = 6
+                draw.rounded_rectangle([bar_x, bar_y + 1, bar_x + bar_w, bar_y + 1 + bar_h],
+                                      radius=3, fill=(70, 70, 70))
+                if prog_ratio > 0:
+                    draw.rounded_rectangle([bar_x, bar_y + 1, bar_x + prog_w, bar_y + 1 + bar_h],
+                                          radius=3, fill=accent)
+
+            # --- Preset 2: Dual Layer ---
+            elif preset == 2:
+                # Thin background
+                draw.rounded_rectangle([bar_x, bar_y + 2, bar_x + bar_w, bar_y + 4],
+                                      radius=1, fill=(80, 80, 80))
+                if prog_ratio > 0:
+                    # Wider colored underlayer
+                    draw.rounded_rectangle([bar_x, bar_y + 1, bar_x + prog_w, bar_y + 5],
+                                          radius=2, fill=accent)
+                    # Bright white core
+                    core_w = max(2, int(prog_w * 0.7))
+                    draw.rounded_rectangle([bar_x, bar_y + 2, bar_x + core_w, bar_y + 4],
+                                          radius=1, fill=(255, 255, 255))
+
+            # --- Preset 3: Segmented ---
+            elif preset == 3:
+                draw.rounded_rectangle([bar_x, bar_y + 2, bar_x + bar_w, bar_y + 6],
+                                      radius=2, fill=(70, 70, 70))
+                if prog_ratio > 0:
+                    seg_w = 8
+                    seg_gap = 3
+                    seg_h = 4
+                    filled = int(prog_w / (seg_w + seg_gap))
+                    for i in range(filled):
+                        sx = bar_x + i * (seg_w + seg_gap)
+                        draw.rounded_rectangle([sx, bar_y + 2, sx + seg_w, bar_y + 2 + seg_h],
+                                              radius=1, fill=accent)
+
+            # --- Preset 4: Dot Marker ---
+            elif preset == 4:
+                draw.rounded_rectangle([bar_x, bar_y + 3, bar_x + bar_w, bar_y + 5],
+                                      radius=1, fill=(80, 80, 80))
+                if prog_ratio > 0:
+                    draw.rounded_rectangle([bar_x, bar_y + 3, bar_x + prog_w, bar_y + 5],
+                                          radius=1, fill=accent)
+                    # Dot at progress tip
+                    dot_x = bar_x + prog_w
+                    dot_r = 5
+                    draw.ellipse([dot_x - dot_r, bar_y + 1, dot_x + dot_r, bar_y + 7],
+                                fill=accent)
+                    draw.ellipse([dot_x - 2, bar_y + 3, dot_x + 2, bar_y + 5],
+                                fill=(255, 255, 255))
+
+            # --- Preset 5: Minimal Accent ---
+            else:
+                draw.rounded_rectangle([bar_x, bar_y + 3, bar_x + bar_w, bar_y + 5],
+                                      radius=1, fill=(60, 60, 60))
+                if prog_ratio > 0:
+                    draw.rounded_rectangle([bar_x, bar_y + 3, bar_x + prog_w, bar_y + 5],
+                                          radius=1, fill=accent)
 
         img.convert("RGB").save(tmp_out, "PNG")
         return tmp_out
