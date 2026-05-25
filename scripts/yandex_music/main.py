@@ -1437,6 +1437,16 @@ async def _cmd_now(client, message) -> None:
         dur = _fmt_dur(getattr(track, "duration_ms", None))
         album = track.albums[0].title if track.albums else ""
 
+        # Ynison progress (progress_ms / duration_ms)
+        progress_str = ""
+        ynison_progress = getattr(track, "_ynison_progress", None)
+        ynison_duration = getattr(track, "_ynison_duration", None)
+        if ynison_progress is not None and ynison_duration:
+            progress_str = _fmt_dur(int(ynison_progress)) + " / " + _fmt_dur(int(ynison_duration))
+
+        # Yandex Music link
+        track_url = f"https://music.yandex.ru/track/{track.id}" if track.id else ""
+
         cover_uri = getattr(track, "cover_uri", None)
         cover_path = None
         if cover_uri:
@@ -1450,7 +1460,12 @@ async def _cmd_now(client, message) -> None:
         lines.append(f"🎤 {artists}")
         if album:
             lines.append(f"💿 {album}")
-        lines.append(f"⏱ {dur}")
+        if progress_str:
+            lines.append(f"⏱ {progress_str}")
+        elif dur and dur != "\u2014":
+            lines.append(f"⏱ {dur}")
+        if track_url:
+            lines.append(f'<a href="{track_url}">Яндекс Музыка</a>')
         text = "\n".join(lines)
 
         await message.edit_text("📡 Отправляю…")
