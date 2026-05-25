@@ -749,7 +749,7 @@ async def _cmd_chart(client, message) -> None:
             pass
 
 
-async def _generate_now_cover(cover_uri: str) -> str | None:
+def _generate_now_cover(cover_uri: str) -> str | None:
     """Generate 500x200 now-playing card: blurred bg + sharp centered cover.
 
     Returns path to the generated image or None on failure.
