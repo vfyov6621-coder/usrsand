@@ -345,7 +345,7 @@ async def _cmd_download(client, message) -> None:
         try:
             await message.edit_text(
                 "\u274c Использование: <code>.ya d id_трека</code>",
-                parse_mode="HTML",
+                parse_mode=ParseMode.HTML,
             )
         except Exception:
             pass
@@ -1585,6 +1585,7 @@ def _fetch_ynison_state():
 async def _cmd_bar(client, message) -> None:
     """Show progress bar preset selector with inline keyboard."""
     from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+    from pyrogram.enums import ParseMode
 
     try:
         cfg = _load_bar_cfg()
@@ -1613,7 +1614,7 @@ async def _cmd_bar(client, message) -> None:
             f"<b>Текущий:</b> {current_name}\n\n"
             f"<i>Выбери стиль для карточки</i> <code>.ya now</code>"
         )
-        await message.edit_text(text, parse_mode="HTML", reply_markup=markup)
+        await message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=markup)
     except Exception as e:
         log.error("_cmd_bar error: %s", e, exc_info=True)
         try:
@@ -2039,7 +2040,7 @@ def register(client):
             )
             try:
                 await callback_query.message.edit_text(
-                    text, parse_mode="HTML", reply_markup=markup)
+                    text, parse_mode=ParseMode.HTML, reply_markup=markup)
             except Exception:
                 pass
             return
