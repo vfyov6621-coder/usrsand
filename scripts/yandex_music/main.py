@@ -1586,37 +1586,38 @@ async def _cmd_bar(client, message) -> None:
     """Show progress bar preset selector with inline keyboard."""
     from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-    cfg = _load_bar_cfg()
-    current = cfg.get("preset", -1)
-    current_name = BAR_PRESETS.get(current, ("?", ""))[0]
-
-    rows = []
-    # Row: Auto
-    rows.append([InlineKeyboardButton(
-        f"{'✓ ' if current == -1 else ''}{BAR_PRESETS[-1][0]}",
-        callback_data="ym_bar:-1",
-    )])
-    # Rows: presets 0-5, two per row
-    for i in range(0, 6, 2):
-        row = []
-        for j in (i, i + 1):
-            row.append(InlineKeyboardButton(
-                f"{'✓ ' if current == j else ''}{BAR_PRESETS[j][0]}",
-                callback_data=f"ym_bar:{j}",
-            ))
-        rows.append(row)
-
-    markup = InlineKeyboardMarkup(rows)
-    text = (
-        f"<b>\U0001f3a7 Стиль прогресс-бара</b>\n\n"
-        f"<b>Текущий:</b> {current_name}\n\n"
-        f"<i>Выбери стиль для карточки</i> <code>.ya now</code>"
-    )
     try:
+        cfg = _load_bar_cfg()
+        current = cfg.get("preset", -1)
+        current_name = BAR_PRESETS.get(current, ("?", ""))[0]
+
+        rows = []
+        # Row: Auto
+        rows.append([InlineKeyboardButton(
+            f"{'✓ ' if current == -1 else ''}{BAR_PRESETS[-1][0]}",
+            callback_data="ym_bar:-1",
+        )])
+        # Rows: presets 0-5, two per row
+        for i in range(0, 6, 2):
+            row = []
+            for j in (i, i + 1):
+                row.append(InlineKeyboardButton(
+                    f"{'✓ ' if current == j else ''}{BAR_PRESETS[j][0]}",
+                    callback_data=f"ym_bar:{j}",
+                ))
+            rows.append(row)
+
+        markup = InlineKeyboardMarkup(rows)
+        text = (
+            f"<b>Стиль прогресс-бара</b>\n\n"
+            f"<b>Текущий:</b> {current_name}\n\n"
+            f"<i>Выбери стиль для карточки</i> <code>.ya now</code>"
+        )
         await message.edit_text(text, parse_mode="HTML", reply_markup=markup)
-    except Exception:
+    except Exception as e:
+        log.error("_cmd_bar error: %s", e, exc_info=True)
         try:
-            await message.reply(text, parse_mode="HTML", reply_markup=markup)
+            await message.reply(f"❌ Ошибка: {e}")
         except Exception:
             pass
 
