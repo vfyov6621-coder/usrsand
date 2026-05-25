@@ -834,8 +834,10 @@ def _fetch_now_playing():
 
     ym = _get_client()
 
-    # ── Method 1: queues() + queues_items() (yandex-music 2.x) ──
-    for q_method in ("queues", "get_queues", "list_queues", "queues_list"):
+    # ── Method 1: queues_list() + queue(id) or queues_items() ──
+    #   v3: queues_list() → queue(id)
+    #   v2: queues() → queues_items(id)
+    for q_method in ("queues_list", "queues", "get_queues", "list_queues"):
         if hasattr(ym, q_method):
             try:
                 queues = getattr(ym, q_method)()
@@ -843,31 +845,55 @@ def _fetch_now_playing():
                     q = queues[0]
                     qid = getattr(q, "id", None)
                     if qid:
-                        # queues_items возвращает полную очередь с треками
-                        qi_method = "queues_items"
-                        if not hasattr(ym, qi_method):
-                            qi_method = "get_queues_items"
-                        if hasattr(ym, qi_method):
-                            queue_tracks = getattr(ym, qi_method)(qid)
-                            items = (getattr(queue_tracks, "tracks", None)
-                                     or getattr(queue_tracks, "items", None)
-                                     or [])
-                            if items:
-                                first = items[0]
-                                track_id = getattr(first, "track_id", None)
-                                if track_id:
-                                    tracks = ym.tracks([str(track_id)])
-                                    if tracks:
+                        # v3: queue(id) — возвращает очередь с треками
+                        qi_tried = False
+                        for qi_method in ("queues_items", "get_queues_items", "queue"):
+                            if hasattr(ym, qi_method):
+                                try:
+                                    queue_data = getattr(ym, qi_method)(qid)
+                                    qi_tried = True
+
+                                    # queue() в v3 возвращает объект Queue с .tracks
+                                    track_found = None
+                                    qt = getattr(queue_data, "tracks", None)
+                                    qi = getattr(queue_data, "items", None)
+                                    ct = getattr(queue_data, "current_track", None)
+
+                                    # Приоритет: current_track > items[0] > tracks[0]
+                                    if ct and hasattr(ct, "title"):
+                                        track_found = ct
+                                    elif qi:
+                                        for first in qi:
+                                            t = getattr(first, "track", None)
+                                            if t and hasattr(t, "title"):
+                                                track_found = t
+                                                break
+                                            elif hasattr(first, "track_id"):
+                                                tid = first.track_id
+                                                t = ym.tracks([str(tid)])
+                                                if t:
+                                                    track_found = t[0]
+                                                    break
+                                    if not track_found and qt:
+                                        for first in qt:
+                                            if hasattr(first, "title"):
+                                                track_found = first
+                                                break
+                                            elif hasattr(first, "track_id"):
+                                                tid = first.track_id
+                                                t = ym.tracks([str(tid)])
+                                                if t:
+                                                    track_found = t[0]
+                                                    break
+
+                                    if track_found:
                                         ctx = getattr(q, "context", None)
                                         ctx_type = getattr(ctx, "type", None) if ctx else None
-                                        return tracks[0], ctx_type or "queue"
-                                else:
-                                    # Сам item может быть Track
-                                    track = getattr(first, "track", None) or first
-                                    if hasattr(track, "title"):
-                                        ctx = getattr(q, "context", None)
-                                        ctx_type = getattr(ctx, "type", None) if ctx else None
-                                        return track, ctx_type or "queue"
+                                        return track_found, ctx_type or "queue"
+                                except Exception as e:
+                                    log.debug("%s(%s) failed: %s", qi_method, qid, e)
+                        if not qi_tried:
+                            log.debug("No queue detail method found")
             except Exception as e:
                 log.warning("%s failed: %s", q_method, e)
             break
@@ -1149,22 +1175,57 @@ def _fetch_ynison_state():
                 log.warning("Ynison: state handshake failed")
                 return None
 
+            # Shadow/Observer mode — read current state, don't intercept playback
+            import random as _rnd
             init_msg = json.dumps({
-                "updates": [{
-                    "update_full_state": {
-                        "player_state": {
-                            "status": {"paused": True},
-                            "player_queue": {},
+                "update_full_state": {
+                    "player_state": {
+                        "player_queue": {
+                            "current_playable_index": -1,
+                            "entity_id": "",
+                            "entity_type": "VARIOUS",
+                            "playable_list": [],
+                            "options": {"repeat_mode": "NONE"},
+                            "entity_context": "BASED_ON_ENTITY_BY_DEFAULT",
+                            "version": {
+                                "device_id": device_id,
+                                "version": int(1e18 * _rnd.random()),
+                                "timestamp_ms": 0,
+                            },
+                            "from_optional": "",
                         },
-                        "device_info": {
+                        "status": {
+                            "duration_ms": 0,
+                            "paused": True,
+                            "playback_speed": 1,
+                            "progress_ms": 0,
+                            "version": {
+                                "device_id": device_id,
+                                "version": int(1e18 * _rnd.random()),
+                                "timestamp_ms": 0,
+                            },
+                        },
+                    },
+                    "device": {
+                        "capabilities": {
+                            "can_be_player": True,
+                            "can_be_remote_controller": False,
+                            "volume_granularity": 16,
+                        },
+                        "info": {
                             "device_id": device_id,
-                            "capabilities": [],
-                            "type": 1,
+                            "type": "WEB",
+                            "title": "sandusr",
                             "app_name": "sandusr",
                         },
-                    }
-                }],
-                "ticket": redirect_ticket,
+                        "volume_info": {"volume": 0},
+                        "is_shadow": True,
+                    },
+                    "is_currently_active": False,
+                },
+                "rid": uuid.uuid4().hex,
+                "player_action_timestamp_ms": 0,
+                "activity_interception_type": "DO_NOT_INTERCEPT_BY_DEFAULT",
             })
             await _ws_send(writer, init_msg)
 
@@ -1196,12 +1257,18 @@ def _fetch_ynison_state():
 
     player_state = None
     if isinstance(data, dict):
-        updates = data.get("updates", [])
-        for u in updates:
-            full = u.get("update_full_state", {})
-            if full:
-                player_state = full.get("player_state") or full
-                break
+        # New format: flat update_full_state at top level
+        full = data.get("update_full_state")
+        if full:
+            player_state = full.get("player_state") or full
+        # Old/alternative format: wrapped in updates array
+        if not player_state:
+            updates = data.get("updates", [])
+            for u in updates:
+                full = u.get("update_full_state", {})
+                if full:
+                    player_state = full.get("player_state") or full
+                    break
         if not player_state:
             player_state = data.get("player_state")
 
@@ -1423,7 +1490,7 @@ async def _cmd_debug(message) -> None:
 
         # test queues
         ql_method = None
-        for qm in ("queues", "get_queues", "list_queues", "queues_list"):
+        for qm in ("queues_list", "queues", "get_queues", "list_queues"):
             if hasattr(ym, qm):
                 ql_method = qm
                 break
@@ -1438,28 +1505,29 @@ async def _cmd_debug(message) -> None:
                         qtype = getattr(qctx, "type", "?") if qctx else "?"
                         lines.append(f"  [{qi}] id={qid}, ctx={qtype}")
 
-                    # пробуем queues_items для первой очереди
+                    # пробуем queue() или queues_items() для первой очереди
                     first_qid = getattr(queues[0], "id", None)
                     if first_qid:
-                        qi_method = "queues_items"
-                        if not hasattr(ym, qi_method):
-                            qi_method = "get_queues_items"
-                        if qi_method and hasattr(ym, qi_method):
-                            qd = await _run_sync(getattr(ym, qi_method), first_qid)
-                            if qd:
-                                attrs = sorted([a for a in dir(qd) if not a.startswith("_")])
-                                lines.append(f"\n<b>queues_items() attrs:</b> <code>{', '.join(attrs[:20])}</code>")
-                                # покажем первые 3 атрибута с данными
-                                for attr in ("track", "current_track", "tracks", "items"):
-                                    val = getattr(qd, attr, None)
-                                    if val:
-                                        if isinstance(val, list):
-                                            lines.append(f"  {attr}: list[{len(val)}]")
+                        for qi_method in ("queues_items", "get_queues_items", "queue"):
+                            if hasattr(ym, qi_method):
+                                try:
+                                    qd = await _run_sync(getattr(ym, qi_method), first_qid)
+                                    if qd:
+                                        attrs = sorted([a for a in dir(qd) if not a.startswith("_")])
+                                        lines.append(f"\n<b>{qi_method}() attrs:</b> <code>{', '.join(attrs[:20])}</code>")
+                                        for attr in ("track", "current_track", "tracks", "items"):
+                                            val = getattr(qd, attr, None)
                                             if val:
-                                                item0 = val[0]
-                                                lines.append(f"    [0] type={type(item0).__name__}, attrs={sorted([a for a in dir(item0) if not a.startswith('_')])[:10]}")
-                                        else:
-                                            lines.append(f"  {attr}: {type(val).__name__}")
+                                                if isinstance(val, list):
+                                                    lines.append(f"  {attr}: list[{len(val)}]")
+                                                    if val:
+                                                        item0 = val[0]
+                                                        lines.append(f"    [0] type={type(item0).__name__}, attrs={sorted([a for a in dir(item0) if not a.startswith('_')])[:10]}")
+                                                else:
+                                                    lines.append(f"  {attr}: {type(val).__name__}")
+                                except Exception as e:
+                                    lines.append(f"\n<b>{qi_method}():</b> ❌ {e}")
+                                break
                 else:
                     lines.append(f"\n<b>Queues:</b> пусто (music playing?)")
             except Exception as e:
