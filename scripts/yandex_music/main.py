@@ -780,8 +780,7 @@ async def _cmd_chart(client, message) -> None:
 
 
 def _generate_now_cover(cover_uri: str, title: str = "", artists: str = "",
-                         progress_ms: int = 0, duration_ms: int = 0,
-                         album: str = "", bar_preset: int = -1) -> str | None:
+                         **kwargs) -> str | None:
     """Generate 400x400 now-playing card with cover + text overlay.
 
     Layout:
@@ -789,8 +788,6 @@ def _generate_now_cover(cover_uri: str, title: str = "", artists: str = "",
       - Bottom gradient overlay for text
       - Track title (bold, white)
       - Artist name (white, smaller)
-      - Progress / Duration (left / right)
-      - Custom progress bar (unique preset per track)
 
     Returns path to the generated image or None on failure.
     """
@@ -807,7 +804,6 @@ def _generate_now_cover(cover_uri: str, title: str = "", artists: str = "",
         # ── bottom gradient overlay ──
         overlay = Image.new("RGBA", (400, 400), (0, 0, 0, 0))
         draw_ov = ImageDraw.Draw(overlay)
-        # Gradient from fully transparent at 40% to semi-black at 100%
         for y in range(160, 400):
             alpha = int(180 * ((y - 160) / 240))
             alpha = max(0, min(255, alpha))
@@ -817,14 +813,12 @@ def _generate_now_cover(cover_uri: str, title: str = "", artists: str = "",
         draw = ImageDraw.Draw(img)
 
         # ── fonts ──
-        # Try multiple font locations (Linux server + Windows user machine)
         font_candidates = [
             "/usr/share/fonts/truetype/chinese/NotoSansSC[wght].ttf",
             "/usr/share/fonts/truetype/noto-serif-sc/NotoSerifSC-Regular.ttf",
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
             "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
             "/usr/share/fonts/truetype/english/Tinos-Regular.ttf",
-            # Windows paths
             "C:/Windows/Fonts/segoeui.ttf",
             "C:/Windows/Fonts/arial.ttf",
             "C:/Windows/Fonts/tahoma.ttf",
@@ -835,166 +829,25 @@ def _generate_now_cover(cover_uri: str, title: str = "", artists: str = "",
                 font_path = fp
                 break
 
-        font_bold = None
-        font_path_bold = None
-        if font_path and "NotoSansSC" in font_path:
-            font_path_bold = font_path  # same file, variable weight
-        else:
-            font_path_bold = font_path  # use same font
-
         try:
-            font_title = ImageFont.truetype(font_path_bold or font_path, 20)
-            font_artist = ImageFont.truetype(font_path, 16)
-            font_time = ImageFont.truetype(font_path, 13)
-            font_album = ImageFont.truetype(font_path, 12)
+            font_title = ImageFont.truetype(font_path, 22)
+            font_artist = ImageFont.truetype(font_path, 17)
         except Exception:
             font_title = ImageFont.load_default()
             font_artist = ImageFont.load_default()
-            font_time = ImageFont.load_default()
-            font_album = ImageFont.load_default()
 
-        # ── text positioning (bottom area) ──
-        y_base = 275
+        # ── text ──
+        y_base = 290
 
-        # Title (truncate if too long)
         title_text = title or ""
         if len(title_text) > 35:
             title_text = title_text[:33] + "..."
         draw.text((20, y_base), title_text, fill="white", font=font_title)
 
-        # Artist
         artist_text = artists or ""
         if len(artist_text) > 40:
             artist_text = artist_text[:38] + "..."
-        draw.text((20, y_base + 28), artist_text, fill=(220, 220, 220), font=font_artist)
-
-        # Time: progress / duration
-        def _fmt_ms(ms):
-            try:
-                ms = int(ms)
-            except (TypeError, ValueError):
-                return "0:00"
-            if ms <= 0:
-                return "0:00"
-            s = ms // 1000
-            return f"{s // 60}:{s % 60:02d}"
-
-        time_y = y_base + 54
-        prog_str = _fmt_ms(progress_ms)
-        dur_str = _fmt_ms(duration_ms)
-        draw.text((20, time_y), prog_str, fill=(200, 200, 200), font=font_time)
-        # Right-align duration
-        dur_bbox = draw.textbbox((0, 0), dur_str, font=font_time)
-        dur_w = dur_bbox[2] - dur_bbox[0]
-        draw.text((380 - dur_w, time_y), dur_str, fill=(200, 200, 200), font=font_time)
-
-        # ── Custom progress bar ──
-        try:
-            progress_ms = int(progress_ms) if progress_ms else 0
-            duration_ms = int(duration_ms) if duration_ms else 0
-        except (TypeError, ValueError):
-            progress_ms = 0
-            duration_ms = 0
-
-        if duration_ms > 0:
-            import hashlib, colorsys
-
-            bar_y = time_y + 20
-            bar_x = 20
-            bar_w = 360
-            prog_ratio = min(progress_ms / duration_ms, 1.0)
-            prog_w = max(4, int(bar_w * prog_ratio))
-
-            # Deterministic color from track + artist
-            seed = hashlib.sha256(f"{title}|{artists}".encode()).hexdigest()
-            hue = (int(seed[:8], 16) % 360)
-            sat = 0.6 + (int(seed[8:12], 16) % 30) / 100   # 0.60–0.90
-            val = 0.85 + (int(seed[12:16], 16) % 15) / 100  # 0.85–1.00
-            r, g, b = colorsys.hsv_to_rgb(hue / 360, sat, val)
-            accent = (int(r * 255), int(g * 255), int(b * 255))
-
-            # Use saved preset if set, otherwise hash-based
-            if bar_preset >= 0:
-                preset = bar_preset
-            else:
-                preset = int(seed[16:20], 16) % 6
-
-            # --- Preset 0: Neon Glow ---
-            if preset == 0:
-                bg_h = 3
-                draw.rounded_rectangle([bar_x, bar_y + 2, bar_x + bar_w, bar_y + 2 + bg_h],
-                                      radius=1, fill=(60, 60, 60))
-                if prog_ratio > 0:
-                    # Wide glow (semi-transparent overlay)
-                    glow = Image.new("RGBA", img.size, (0, 0, 0, 0))
-                    glow_draw = ImageDraw.Draw(glow)
-                    glow_draw.rounded_rectangle([bar_x, bar_y, bar_x + prog_w, bar_y + 7],
-                                               radius=3, fill=(*accent, 60))
-                    img = Image.alpha_composite(img, glow)
-                    draw = ImageDraw.Draw(img)
-                    # Thin bright core
-                    draw.rounded_rectangle([bar_x, bar_y + 2, bar_x + prog_w, bar_y + 5],
-                                          radius=1, fill=accent)
-
-            # --- Preset 1: Thick Pill ---
-            elif preset == 1:
-                bar_h = 6
-                draw.rounded_rectangle([bar_x, bar_y + 1, bar_x + bar_w, bar_y + 1 + bar_h],
-                                      radius=3, fill=(70, 70, 70))
-                if prog_ratio > 0:
-                    draw.rounded_rectangle([bar_x, bar_y + 1, bar_x + prog_w, bar_y + 1 + bar_h],
-                                          radius=3, fill=accent)
-
-            # --- Preset 2: Dual Layer ---
-            elif preset == 2:
-                # Thin background
-                draw.rounded_rectangle([bar_x, bar_y + 2, bar_x + bar_w, bar_y + 4],
-                                      radius=1, fill=(80, 80, 80))
-                if prog_ratio > 0:
-                    # Wider colored underlayer
-                    draw.rounded_rectangle([bar_x, bar_y + 1, bar_x + prog_w, bar_y + 5],
-                                          radius=2, fill=accent)
-                    # Bright white core
-                    core_w = max(2, int(prog_w * 0.7))
-                    draw.rounded_rectangle([bar_x, bar_y + 2, bar_x + core_w, bar_y + 4],
-                                          radius=1, fill=(255, 255, 255))
-
-            # --- Preset 3: Segmented ---
-            elif preset == 3:
-                draw.rounded_rectangle([bar_x, bar_y + 2, bar_x + bar_w, bar_y + 6],
-                                      radius=2, fill=(70, 70, 70))
-                if prog_ratio > 0:
-                    seg_w = 8
-                    seg_gap = 3
-                    seg_h = 4
-                    filled = int(prog_w / (seg_w + seg_gap))
-                    for i in range(filled):
-                        sx = bar_x + i * (seg_w + seg_gap)
-                        draw.rounded_rectangle([sx, bar_y + 2, sx + seg_w, bar_y + 2 + seg_h],
-                                              radius=1, fill=accent)
-
-            # --- Preset 4: Dot Marker ---
-            elif preset == 4:
-                draw.rounded_rectangle([bar_x, bar_y + 3, bar_x + bar_w, bar_y + 5],
-                                      radius=1, fill=(80, 80, 80))
-                if prog_ratio > 0:
-                    draw.rounded_rectangle([bar_x, bar_y + 3, bar_x + prog_w, bar_y + 5],
-                                          radius=1, fill=accent)
-                    # Dot at progress tip
-                    dot_x = bar_x + prog_w
-                    dot_r = 5
-                    draw.ellipse([dot_x - dot_r, bar_y + 1, dot_x + dot_r, bar_y + 7],
-                                fill=accent)
-                    draw.ellipse([dot_x - 2, bar_y + 3, dot_x + 2, bar_y + 5],
-                                fill=(255, 255, 255))
-
-            # --- Preset 5: Minimal Accent ---
-            else:
-                draw.rounded_rectangle([bar_x, bar_y + 3, bar_x + bar_w, bar_y + 5],
-                                      radius=1, fill=(60, 60, 60))
-                if prog_ratio > 0:
-                    draw.rounded_rectangle([bar_x, bar_y + 3, bar_x + prog_w, bar_y + 5],
-                                          radius=1, fill=accent)
+        draw.text((20, y_base + 30), artist_text, fill=(220, 220, 220), font=font_artist)
 
         img.convert("RGB").save(tmp_out, "PNG")
         return tmp_out
@@ -1687,24 +1540,8 @@ async def _cmd_now(client, message) -> None:
         artists_plain = artists
         album = track.albums[0].title if track.albums else ""
 
-        # Ynison progress / duration / device
-        ynison_progress = getattr(track, "_ynison_progress", None) or 0
-        ynison_duration = getattr(track, "_ynison_duration", None) or 0
+        # Ynison device
         ynison_device = getattr(track, "_ynison_device", None)
-
-        # Force int (Ynison may return strings)
-        try:
-            ynison_progress = int(ynison_progress)
-        except (TypeError, ValueError):
-            ynison_progress = 0
-        try:
-            ynison_duration = int(ynison_duration)
-        except (TypeError, ValueError):
-            ynison_duration = 0
-
-        # Progress bar preset from config
-        bar_cfg = await _run_sync(_load_bar_cfg)
-        bar_preset = int(bar_cfg.get("preset", -1))
 
         # Artist link (first artist)
         artist_url = ""
@@ -1721,15 +1558,10 @@ async def _cmd_now(client, message) -> None:
         cover_uri = getattr(track, "cover_uri", None)
         cover_path = None
         if cover_uri:
-            dur = ynison_duration or (track.duration_ms or 0)
             cover_path = await _run_sync(
                 _generate_now_cover, cover_uri,
                 title=track.title or "",
                 artists=artists_plain,
-                progress_ms=ynison_progress,
-                duration_ms=dur,
-                album=album,
-                bar_preset=bar_preset,
             )
 
         # ── build caption ──
