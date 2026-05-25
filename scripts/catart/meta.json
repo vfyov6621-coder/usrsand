@@ -1,0 +1,7 @@
+{
+  "name": "CatArt",
+  "version": "1.0",
+  "author": "sandusr",
+  "description": "ASCII-арт с котами",
+  "command": "-catart"
+}

@@ -1,0 +1,7 @@
+{
+  "name": "Crypto",
+  "version": "1.0",
+  "author": "sandusr",
+  "description": "Бесполезный токен + курс к хлебу",
+  "command": "-crypto"
+}
