@@ -1230,7 +1230,7 @@ def _fetch_ynison_state():
             await _ws_send(writer, init_msg)
 
             response = await _ws_recv(reader, leftover)
-            log.info("Ynison state response: %s", response[:500] if response else "empty")
+            log.info("Ynison state response (%d bytes): %s", len(response) if response else 0, response[:2000] if response else "empty")
             writer.close()
             return response
 
@@ -1279,29 +1279,46 @@ def _fetch_ynison_state():
     pq = player_state.get("player_queue", {})
     playable_list = pq.get("playable_list", [])
     current_idx = pq.get("current_playable_index", 0)
+    entity_id = pq.get("entity_id", "")
 
-    if not playable_list or current_idx >= len(playable_list):
-        log.debug("Ynison: empty playable_list or invalid index")
-        return None
+    log.info("Ynison: entity_id=%s, type=%s, idx=%d, list_len=%d",
+             entity_id, pq.get("entity_type"), current_idx, len(playable_list))
 
-    playable = playable_list[current_idx]
-    playable_id = playable.get("playable_id", "")
-
-    # Parse playable_id: "track:12345:album:67890"
+    # Try to extract track_id from playable_list[current_idx] first
     track_id = None
     album_id = None
-    parts = playable_id.split(":")
-    for i, p in enumerate(parts):
-        if p == "track" and i + 1 < len(parts):
-            try:
-                track_id = int(parts[i + 1])
-            except ValueError:
-                pass
-        if p == "album" and i + 1 < len(parts):
-            try:
-                album_id = int(parts[i + 1])
-            except ValueError:
-                pass
+
+    if playable_list and 0 <= current_idx < len(playable_list):
+        playable = playable_list[current_idx]
+        playable_id = playable.get("playable_id", "")
+        # Parse playable_id: "track:12345:album:67890"
+        parts = playable_id.split(":")
+        for i, p in enumerate(parts):
+            if p == "track" and i + 1 < len(parts):
+                try:
+                    track_id = int(parts[i + 1])
+                except ValueError:
+                    pass
+            if p == "album" and i + 1 < len(parts):
+                try:
+                    album_id = int(parts[i + 1])
+                except ValueError:
+                    pass
+
+    # Fallback: parse entity_id directly — "track:135433405"
+    if not track_id and entity_id:
+        parts = entity_id.split(":")
+        for i, p in enumerate(parts):
+            if p == "track" and i + 1 < len(parts):
+                try:
+                    track_id = int(parts[i + 1])
+                except ValueError:
+                    pass
+            if p == "album" and i + 1 < len(parts):
+                try:
+                    album_id = int(parts[i + 1])
+                except ValueError:
+                    pass
 
     status = player_state.get("status", {})
     progress_ms = status.get("progress_ms")
@@ -1350,13 +1367,13 @@ async def _cmd_now(client, message) -> None:
                 import yandex_music
                 ym_ver = getattr(yandex_music, "__version__", "?")
                 ym = _get_client()
-                for m in ("queues", "queues_items", "player_state", "player", "feed", "landing"):
+                for m in ("queues_list", "queues", "queues_items", "queue", "player_state", "player", "feed", "landing"):
                     if hasattr(ym, m):
                         available.append(m)
 
                 # попробуем получить список очередей для диагностики
                 ql = None
-                for qm in ("queues", "get_queues", "list_queues", "queues_list"):
+                for qm in ("queues_list", "queues", "get_queues", "list_queues"):
                     if hasattr(ym, qm):
                         try:
                             ql = getattr(ym, qm)()
