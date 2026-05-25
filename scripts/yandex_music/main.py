@@ -749,48 +749,134 @@ async def _cmd_chart(client, message) -> None:
             pass
 
 
-def _generate_now_cover(cover_uri: str) -> str | None:
-    """Generate 500x200 now-playing card: blurred bg + sharp centered cover.
+def _generate_now_cover(cover_uri: str, title: str = "", artists: str = "",
+                         progress_ms: int = 0, duration_ms: int = 0,
+                         album: str = "") -> str | None:
+    """Generate 400x400 now-playing card with cover + text overlay.
+
+    Layout:
+      - Full-size cover image
+      - Bottom gradient overlay for text
+      - Track title (bold, white)
+      - Artist name (white, smaller)
+      - Progress / Duration (left / right)
+      - Album name (small, white italic)
 
     Returns path to the generated image or None on failure.
     """
     import urllib.request
-    from PIL import Image, ImageFilter
+    from PIL import Image, ImageDraw, ImageFont
 
     try:
         cover_url = _cover_url(cover_uri, "400x400")
-        tmp_cover = os.path.join(tempfile.gettempdir(), "ym_cover_raw.jpg")
         tmp_out = os.path.join(tempfile.gettempdir(), "ym_now_card.png")
 
-        urllib.request.urlretrieve(cover_url, tmp_cover)
-        src = Image.open(tmp_cover).convert("RGB")
+        urllib.request.urlretrieve(cover_url, tmp_out)
+        img = Image.open(tmp_out).convert("RGBA").resize((400, 400), Image.LANCZOS)
 
-        # ── blurred background: cover-to-fill 500x200 ──
-        bg = src.copy()
-        bg = bg.resize((500, 200), Image.LANCZOS)
-        bg = bg.filter(ImageFilter.GaussianBlur(25))
+        # ── bottom gradient overlay ──
+        overlay = Image.new("RGBA", (400, 400), (0, 0, 0, 0))
+        draw_ov = ImageDraw.Draw(overlay)
+        # Gradient from fully transparent at 40% to semi-black at 100%
+        for y in range(160, 400):
+            alpha = int(180 * ((y - 160) / 240))
+            alpha = max(0, min(255, alpha))
+            draw_ov.line([(0, y), (400, y)], fill=(0, 0, 0, alpha))
+        img = Image.alpha_composite(img, overlay)
 
-        # darken overlay so text pops
-        overlay = Image.new("RGBA", (500, 200), (0, 0, 0, 120))
-        bg_rgba = bg.convert("RGBA")
-        bg_rgba = Image.alpha_composite(bg_rgba, overlay)
+        draw = ImageDraw.Draw(img)
 
-        # ── sharp centered cover (140x140) ──
-        thumb = src.copy()
-        thumb = thumb.resize((140, 140), Image.LANCZOS)
-        # rounded corners via mask
-        mask = Image.new("L", (140, 140), 0)
-        from PIL import ImageDraw
-        ImageDraw.Draw(mask).rounded_rectangle([0, 0, 139, 139], radius=12, fill=255)
-        thumb = thumb.convert("RGBA")
-        thumb.putalpha(mask)
+        # ── fonts ──
+        # Try multiple font locations (Linux server + Windows user machine)
+        font_candidates = [
+            "/usr/share/fonts/truetype/chinese/NotoSansSC[wght].ttf",
+            "/usr/share/fonts/truetype/noto-serif-sc/NotoSerifSC-Regular.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/truetype/english/Tinos-Regular.ttf",
+            # Windows paths
+            "C:/Windows/Fonts/segoeui.ttf",
+            "C:/Windows/Fonts/arial.ttf",
+            "C:/Windows/Fonts/tahoma.ttf",
+        ]
+        font_path = None
+        for fp in font_candidates:
+            if os.path.exists(fp):
+                font_path = fp
+                break
 
-        # paste centered (vertically centered: (200-140)/2 = 30)
-        paste_x = (500 - 140) // 2
-        paste_y = (200 - 140) // 2
-        bg_rgba.paste(thumb, (paste_x, paste_y), thumb)
+        font_bold = None
+        font_path_bold = None
+        if font_path and "NotoSansSC" in font_path:
+            font_path_bold = font_path  # same file, variable weight
+        else:
+            font_path_bold = font_path  # use same font
 
-        bg_rgba.convert("RGB").save(tmp_out, "PNG")
+        try:
+            font_title = ImageFont.truetype(font_path_bold or font_path, 20)
+            font_artist = ImageFont.truetype(font_path, 16)
+            font_time = ImageFont.truetype(font_path, 13)
+            font_album = ImageFont.truetype(font_path, 12)
+        except Exception:
+            font_title = ImageFont.load_default()
+            font_artist = ImageFont.load_default()
+            font_time = ImageFont.load_default()
+            font_album = ImageFont.load_default()
+
+        # ── text positioning (bottom area) ──
+        y_base = 275
+
+        # Title (truncate if too long)
+        title_text = title or ""
+        if len(title_text) > 35:
+            title_text = title_text[:33] + "..."
+        draw.text((20, y_base), title_text, fill="white", font=font_title)
+
+        # Artist
+        artist_text = artists or ""
+        if len(artist_text) > 40:
+            artist_text = artist_text[:38] + "..."
+        draw.text((20, y_base + 28), artist_text, fill=(220, 220, 220), font=font_artist)
+
+        # Time: progress / duration
+        def _fmt_ms(ms):
+            if not ms:
+                return "0:00"
+            s = ms // 1000
+            return f"{s // 60}:{s % 60:02d}"
+
+        time_y = y_base + 54
+        prog_str = _fmt_ms(progress_ms)
+        dur_str = _fmt_ms(duration_ms)
+        draw.text((20, time_y), prog_str, fill=(200, 200, 200), font=font_time)
+        # Right-align duration
+        dur_bbox = draw.textbbox((0, 0), dur_str, font=font_time)
+        dur_w = dur_bbox[2] - dur_bbox[0]
+        draw.text((380 - dur_w, time_y), dur_str, fill=(200, 200, 200), font=font_time)
+
+        # Progress bar
+        if duration_ms > 0:
+            bar_y = time_y + 20
+            bar_w = 360
+            bar_h = 3
+            # Background bar
+            draw.rounded_rectangle([20, bar_y, 20 + bar_w, bar_y + bar_h],
+                                  radius=1, fill=(100, 100, 100))
+            # Progress bar
+            prog_ratio = min(progress_ms / duration_ms, 1.0) if duration_ms else 0
+            if prog_ratio > 0:
+                prog_w = max(4, int(bar_w * prog_ratio))
+                draw.rounded_rectangle([20, bar_y, 20 + prog_w, bar_y + bar_h],
+                                      radius=1, fill=(255, 255, 255))
+
+        # Album
+        album_text = album or ""
+        if album_text and len(album_text) > 45:
+            album_text = album_text[:43] + "..."
+        if album_text:
+            draw.text((20, time_y + 30), album_text, fill=(180, 180, 180), font=font_album)
+
+        img.convert("RGB").save(tmp_out, "PNG")
         return tmp_out
 
     except Exception as e:
@@ -1434,38 +1520,51 @@ async def _cmd_now(client, message) -> None:
             return
 
         artists = ", ".join(a.name for a in track.artists) if track.artists else ""
-        dur = _fmt_dur(getattr(track, "duration_ms", None))
+        artists_plain = artists
         album = track.albums[0].title if track.albums else ""
 
-        # Ynison progress (progress_ms / duration_ms)
-        progress_str = ""
-        ynison_progress = getattr(track, "_ynison_progress", None)
-        ynison_duration = getattr(track, "_ynison_duration", None)
-        if ynison_progress is not None and ynison_duration:
-            progress_str = _fmt_dur(int(ynison_progress)) + " / " + _fmt_dur(int(ynison_duration))
+        # Ynison progress / duration / device
+        ynison_progress = getattr(track, "_ynison_progress", None) or 0
+        ynison_duration = getattr(track, "_ynison_duration", None) or 0
+        ynison_device = getattr(track, "_ynison_device", None)
 
-        # Yandex Music link
+        # Artist link (first artist)
+        artist_url = ""
+        if track.artists:
+            first = track.artists[0]
+            aid = getattr(first, "id", None)
+            if aid:
+                artist_url = f"https://music.yandex.ru/artist/{aid}"
+
+        # Track link
         track_url = f"https://music.yandex.ru/track/{track.id}" if track.id else ""
 
+        # Generate cover card with all info
         cover_uri = getattr(track, "cover_uri", None)
         cover_path = None
         if cover_uri:
-            cover_path = await _run_sync(_generate_now_cover, cover_uri)
+            cover_path = await _run_sync(
+                _generate_now_cover, cover_uri,
+                title=track.title or "",
+                artists=artists_plain,
+                progress_ms=int(ynison_progress) if ynison_progress else 0,
+                duration_ms=int(ynison_duration) if ynison_duration else (track.duration_ms or 0),
+                album=album,
+            )
 
         # ── build caption ──
-        is_last = ctx_type == "last_played"
-        label = "Последний трек:" if is_last else "Сейчас играет:"
-        lines = [f"☞ <b>{label}</b>", ""]
-        lines.append(f"🎵 <b>{track.title}</b>")
-        lines.append(f"🎤 {artists}")
-        if album:
-            lines.append(f"💿 {album}")
-        if progress_str:
-            lines.append(f"⏱ {progress_str}")
-        elif dur and dur != "\u2014":
-            lines.append(f"⏱ {dur}")
+        lines = []
+        # 🎧 artist — title
+        if artist_url:
+            lines.append(f"\U0001f3a7 <a href=\"{artist_url}\">{artists_plain}</a> \u2014 {track.title}")
+        else:
+            lines.append(f"\U0001f3a7 {artists_plain} \u2014 {track.title}")
+        # Device
+        if ynison_device:
+            lines.append(f"\U0001f4f1 {ynison_device}")
+        # Link
         if track_url:
-            lines.append(f'<a href="{track_url}">Яндекс Музыка</a>')
+            lines.append(f'\U0001f3a7 <a href="{track_url}">Яндекс Музыка</a>')
         text = "\n".join(lines)
 
         await message.edit_text("📡 Отправляю…")
