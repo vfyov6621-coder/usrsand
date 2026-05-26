@@ -1483,13 +1483,23 @@ async def _cmd_now(client, message) -> None:
     """Show currently playing track from Yandex Music with cover card."""
     from pyrogram.enums import ParseMode
 
+    async def _safe(text, **kw):
+        """edit_text with reply fallback for groups."""
+        try:
+            return await message.edit_text(text, **kw)
+        except Exception:
+            try:
+                return await message.reply(text, quote=False, **kw)
+            except Exception:
+                pass
+        return None
+
     try:
-        await message.edit_text("🎧 Определяю…")
+        await _safe("\u270f\ufe0f Определяю\u2026")
 
         track, ctx_type = await _run_sync(_fetch_now_playing)
 
         if not track:
-            # диагностика
             ym_ver = "?.?"
             available = []
             queues_info = ""
@@ -1501,7 +1511,6 @@ async def _cmd_now(client, message) -> None:
                     if hasattr(ym, m):
                         available.append(m)
 
-                # попробуем получить список очередей для диагностики
                 ql = None
                 for qm in ("queues_list", "queues", "get_queues", "list_queues"):
                     if hasattr(ym, qm):
@@ -1511,26 +1520,26 @@ async def _cmd_now(client, message) -> None:
                             pass
                         break
                 if ql:
-                    queues_info = f"Очередей найдено: {len(ql)}\n"
+                    queues_info = f"\u041e\u0447\u0435\u0440\u0435\u0439 \u043d\u0430\u0439\u0434\u0435\u043d\u043e: {len(ql)}\n"
                     for qi, q in enumerate(ql[:3]):
                         qid = getattr(q, "id", "?")
                         qctx = getattr(q, "context", None)
                         qtype = getattr(qctx, "type", "?") if qctx else "?"
                         queues_info += f"  [{qi}] id={qid}, context={qtype}\n"
                 else:
-                    queues_info = "Очереди: пусто или недоступны"
+                    queues_info = "\u041e\u0447\u0435\u0440\u0435\u0434\u0438: \u043f\u0443\u0441\u0442\u043e \u0438\u043b\u0438 \u043d\u0435\u0434\u043e\u0441\u0442\u0443\u043f\u043d\u044b"
             except Exception:
                 pass
 
-            await message.edit_text(
-                f"📭 Не удалось определить играющий трек\n\n"
-                f"<i>Возможные причины:</i>\n"
-                f"• Музыка играет в браузере — очередь не синхронизируется\n"
-                f"  (нужен десктоп/мобильный клиент ЯМ)\n"
-                f"• Нет активной очереди воспроизведения\n\n"
-                f"<b>Диагностика:</b>\n"
-                f"<i>Версия yandex-music: {ym_ver}</i>\n"
-                f"<i>Методы: {', '.join(available) if available else 'none'}</i>\n"
+            await _safe(
+                f"\ud83d\udced \u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u043e\u043f\u0440\u0435\u0434\u0435\u043b\u0438\u0442\u044c \u0438\u0433\u0440\u0430\u044e\u0449\u0438\u0439 \u0442\u0440\u0435\u043a\n\n"
+                f"<i>\u0412\u043e\u0437\u043c\u043e\u0436\u043d\u044b\u0435 \u043f\u0440\u0438\u0447\u0438\u043d\u044b:</i>\n"
+                f"\u2022 \u041c\u0443\u0437\u044b\u043a\u0430 \u0438\u0433\u0440\u0430\u0435\u0442 \u0432 \u0431\u0440\u0430\u0443\u0437\u0435\u0440\u0435 \u2014 \u043e\u0447\u0435\u0440\u0435\u0434\u044c \u043d\u0435 \u0441\u0438\u043d\u0445\u0440\u043e\u043d\u0438\u0437\u0438\u0440\u0443\u0435\u0442\u0441\u044f\n"
+                f"  (\u043d\u0443\u0436\u0435\u043d \u0434\u0435\u0441\u043a\u0442\u043e\u043f/\u043c\u043e\u0431\u0438\u043b\u044c\u043d\u044b\u0439 \u043a\u043b\u0438\u0435\u043d\u0442 \u042f\u041c)\n"
+                f"\u2022 \u041d\u0435\u0442 \u0430\u043a\u0442\u0438\u0432\u043d\u043e\u0439 \u043e\u0447\u0435\u0440\u0435\u0434\u0438 \u0432\u043e\u0441\u043f\u0440\u043e\u0438\u0437\u0432\u0435\u0434\u0435\u043d\u0438\u044f\n\n"
+                f"<b>\u0414\u0438\u0430\u0433\u043d\u043e\u0441\u0442\u0438\u043a\u0430:</b>\n"
+                f"<i>\u0412\u0435\u0440\u0441\u0438\u044f yandex-music: {ym_ver}</i>\n"
+                f"<i>\u041c\u0435\u0442\u043e\u0434\u044b: {', '.join(available) if available else 'none'}</i>\n"
                 f"<i>{queues_info}</i>",
                 parse_mode=ParseMode.HTML,
             )
@@ -1554,7 +1563,7 @@ async def _cmd_now(client, message) -> None:
         # Track link
         track_url = f"https://music.yandex.ru/track/{track.id}" if track.id else ""
 
-        # Generate cover card with all info
+        # Generate cover card
         cover_uri = getattr(track, "cover_uri", None)
         cover_path = None
         if cover_uri:
@@ -1564,22 +1573,19 @@ async def _cmd_now(client, message) -> None:
                 artists=artists_plain,
             )
 
-        # ── build caption ──
-        lines = []
-        # 🎧 artist — title
+        # build caption
+        caption_lines = []
         if artist_url:
-            lines.append(f"\U0001f3a7 <a href=\"{artist_url}\">{artists_plain}</a> \u2014 {track.title}")
+            caption_lines.append(f"\U0001f3a7 <a href=\"{artist_url}\">{artists_plain}</a> \u2014 {track.title}")
         else:
-            lines.append(f"\U0001f3a7 {artists_plain} \u2014 {track.title}")
-        # Device
+            caption_lines.append(f"\U0001f3a7 {artists_plain} \u2014 {track.title}")
         if ynison_device:
-            lines.append(f"\U0001f4f1 {ynison_device}")
-        # Link
+            caption_lines.append(f"\U0001f4f1 {ynison_device}")
         if track_url:
-            lines.append(f'\U0001f3a7 <a href="{track_url}">Яндекс Музыка</a>')
-        text = "\n".join(lines)
+            caption_lines.append(f'\U0001f3a7 <a href="{track_url}">\u042f\u043d\u0434\u0435\u043a\u0441 \u041c\u0443\u0437\u044b\u043a\u0430</a>')
+        text = "\n".join(caption_lines)
 
-        await message.edit_text("📡 Отправляю…")
+        await _safe("\U0001f4e1 \u041e\u0442\u043f\u0440\u0430\u0432\u043b\u044f\u044e\u2026")
 
         if cover_path and os.path.exists(cover_path):
             try:
@@ -1589,29 +1595,20 @@ async def _cmd_now(client, message) -> None:
                     caption=text,
                     parse_mode=ParseMode.HTML,
                 )
-                await message.delete()
-            except Exception:
                 try:
-                    await message.edit_text(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+                    await message.delete()
                 except Exception:
                     pass
-        else:
-            try:
-                await message.edit_text(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
             except Exception:
-                pass
+                await _safe(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+        else:
+            await _safe(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
     except ValueError as e:
-        try:
-            await message.edit_text(f"\u274c {e}")
-        except Exception:
-            pass
+        await _safe(f"\u274c {e}", parse_mode=ParseMode.HTML)
     except Exception as e:
         log.error("now error: %s", e, exc_info=True)
-        try:
-            await message.edit_text(f"\u274c Ошибка: {e}")
-        except Exception:
-            pass
+        await _safe(f"\u274c \u041e\u0448\u0438\u0431\u043a\u0430: {e}", parse_mode=ParseMode.HTML)
 
 
 async def _cmd_debug(message) -> None:
