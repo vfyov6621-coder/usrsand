@@ -14,6 +14,14 @@ from pathlib import Path
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 TOKEN_FILE = os.path.join(SCRIPT_DIR, "token.txt")
 BAR_CFG_FILE = os.path.join(SCRIPT_DIR, "bar_settings.json")
+OVERLAY_CFG_FILE = os.path.join(SCRIPT_DIR, "overlay_settings.json")
+
+# Overlay options for -ya now card
+OVERLAY_OPTIONS = {
+    "title": ("\U0001f4d6 Название трека", "показывать название трека на обложке"),
+    "artist": ("\U0001f3a4 Исполнитель", "показывать исполнителя на обложке"),
+    "gradient": ("\U0001f3a8 Градиент", "тёмный градиент в нижней части обложки"),
+}
 
 # Progress bar preset names
 BAR_PRESETS = {
@@ -263,6 +271,7 @@ async def _cmd_help(message) -> None:
         "<code>-ya chart</code> \u2014 чарт\n"
         "<code>-ya now</code> \u2014 что сейчас играет\n"
         "<code>-ya bar</code> \u2014 стиль прогресс-бара\n"
+        "<code>-ya overlay</code> \u2014 надписи на обложке\n"
         "<code>-ya debug</code> \u2014 диагностика API\n"
         "<code>-ya token</code> <i>токен</i> \u2014 установить токен\n\n"
         "<i>Получить токен: </i>"
@@ -780,14 +789,14 @@ async def _cmd_chart(client, message) -> None:
 
 
 def _generate_now_cover(cover_uri: str, title: str = "", artists: str = "",
+                         show_title=True, show_artist=True, show_gradient=True,
                          **kwargs) -> str | None:
-    """Generate 400x400 now-playing card with cover + text overlay.
+    """Generate 400x400 now-playing card with cover + optional text overlay.
 
-    Layout:
-      - Full-size cover image
-      - Bottom gradient overlay for text
-      - Track title (bold, white)
-      - Artist name (white, smaller)
+    Args:
+        show_title:    draw track title text
+        show_artist:   draw artist name text
+        show_gradient: draw dark gradient at the bottom
 
     Returns path to the generated image or None on failure.
     """
@@ -801,53 +810,58 @@ def _generate_now_cover(cover_uri: str, title: str = "", artists: str = "",
         urllib.request.urlretrieve(cover_url, tmp_out)
         img = Image.open(tmp_out).convert("RGBA").resize((400, 400), Image.LANCZOS)
 
-        # ── bottom gradient overlay ──
-        overlay = Image.new("RGBA", (400, 400), (0, 0, 0, 0))
-        draw_ov = ImageDraw.Draw(overlay)
-        for y in range(160, 400):
-            alpha = int(180 * ((y - 160) / 240))
-            alpha = max(0, min(255, alpha))
-            draw_ov.line([(0, y), (400, y)], fill=(0, 0, 0, alpha))
-        img = Image.alpha_composite(img, overlay)
+        has_text = (show_title and title) or (show_artist and artists)
 
-        draw = ImageDraw.Draw(img)
-
-        # ── fonts ──
-        font_candidates = [
-            "/usr/share/fonts/truetype/chinese/NotoSansSC[wght].ttf",
-            "/usr/share/fonts/truetype/noto-serif-sc/NotoSerifSC-Regular.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-            "/usr/share/fonts/truetype/english/Tinos-Regular.ttf",
-            "C:/Windows/Fonts/segoeui.ttf",
-            "C:/Windows/Fonts/arial.ttf",
-            "C:/Windows/Fonts/tahoma.ttf",
-        ]
-        font_path = None
-        for fp in font_candidates:
-            if os.path.exists(fp):
-                font_path = fp
-                break
-
-        try:
-            font_title = ImageFont.truetype(font_path, 22)
-            font_artist = ImageFont.truetype(font_path, 17)
-        except Exception:
-            font_title = ImageFont.load_default()
-            font_artist = ImageFont.load_default()
+        # ── bottom gradient overlay (only if we show text, or forced on) ──
+        if show_gradient and has_text:
+            overlay = Image.new("RGBA", (400, 400), (0, 0, 0, 0))
+            draw_ov = ImageDraw.Draw(overlay)
+            for y in range(160, 400):
+                alpha = int(180 * ((y - 160) / 240))
+                alpha = max(0, min(255, alpha))
+                draw_ov.line([(0, y), (400, y)], fill=(0, 0, 0, alpha))
+            img = Image.alpha_composite(img, overlay)
 
         # ── text ──
-        y_base = 290
+        if has_text:
+            draw = ImageDraw.Draw(img)
 
-        title_text = title or ""
-        if len(title_text) > 35:
-            title_text = title_text[:33] + "..."
-        draw.text((20, y_base), title_text, fill="white", font=font_title)
+            font_candidates = [
+                "/usr/share/fonts/truetype/chinese/NotoSansSC[wght].ttf",
+                "/usr/share/fonts/truetype/noto-serif-sc/NotoSerifSC-Regular.ttf",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+                "/usr/share/fonts/truetype/english/Tinos-Regular.ttf",
+                "C:/Windows/Fonts/segoeui.ttf",
+                "C:/Windows/Fonts/arial.ttf",
+                "C:/Windows/Fonts/tahoma.ttf",
+            ]
+            font_path = None
+            for fp in font_candidates:
+                if os.path.exists(fp):
+                    font_path = fp
+                    break
 
-        artist_text = artists or ""
-        if len(artist_text) > 40:
-            artist_text = artist_text[:38] + "..."
-        draw.text((20, y_base + 30), artist_text, fill=(220, 220, 220), font=font_artist)
+            try:
+                font_title = ImageFont.truetype(font_path, 22)
+                font_artist = ImageFont.truetype(font_path, 17)
+            except Exception:
+                font_title = ImageFont.load_default()
+                font_artist = ImageFont.load_default()
+
+            y_base = 290
+
+            if show_title:
+                title_text = title or ""
+                if len(title_text) > 35:
+                    title_text = title_text[:33] + "..."
+                draw.text((20, y_base), title_text, fill="white", font=font_title)
+
+            if show_artist:
+                artist_text = artists or ""
+                if len(artist_text) > 40:
+                    artist_text = artist_text[:38] + "..."
+                draw.text((20, y_base + 30), artist_text, fill=(220, 220, 220), font=font_artist)
 
         img.convert("RGB").save(tmp_out, "PNG")
         return tmp_out
@@ -1479,6 +1493,112 @@ async def _cmd_bar(client, message) -> None:
             pass
 
 
+# ───────────── overlay helpers ─────────────
+
+def _load_overlay_cfg() -> dict:
+    """Load overlay settings: {title: bool, artist: bool, gradient: bool}."""
+    if os.path.exists(OVERLAY_CFG_FILE):
+        try:
+            with open(OVERLAY_CFG_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {"title": True, "artist": True, "gradient": True}
+
+
+def _save_overlay_cfg(cfg: dict) -> None:
+    with open(OVERLAY_CFG_FILE, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+
+
+async def _cmd_overlay(client, message) -> None:
+    """Toggle overlay elements on -ya now cover card.
+
+    -ya overlay          → show current settings
+    -ya overlay off      → remove ALL text (clean cover only)
+    -ya overlay on       → restore all defaults
+    -ya overlay title    → toggle title
+    -ya overlay artist   → toggle artist
+    -ya overlay gradient → toggle gradient
+    """
+    from pyrogram.enums import ParseMode
+    from scripts._utils import safe_edit
+
+    parts = message.text.split()
+    arg = parts[2] if len(parts) > 2 else ""
+
+    cfg = _load_overlay_cfg()
+
+    try:
+        if arg == "":
+            # ── show current ──
+            lines = ["<b>\U0001f3a8 Настройки обложки (-ya now)</b>\n"]
+            for key, (name, desc) in OVERLAY_OPTIONS.items():
+                state = cfg.get(key, True)
+                icon = "\u2705" if state else "\u274c"
+                lines.append(f"  {icon} <code>{key}</code> \u2014 {desc}")
+            lines.append(
+                f"\n<i>Примеры:</i>\n"
+                "  <code>-ya overlay off</code> \u2014 чистая обложка\n"
+                "  <code>-ya overlay on</code> \u2014 всё по умолчанию\n"
+                "  <code>-ya overlay title</code> \u2014 вкл/выкл название\n"
+                "  <code>-ya overlay artist</code> \u2014 вкл/выкл исполнителя\n"
+                "  <code>-ya overlay gradient</code> \u2014 вкл/выкл градиент"
+            )
+            await safe_edit(message, "\n".join(lines), parse_mode=ParseMode.HTML)
+            return
+
+        if arg == "off":
+            cfg = {"title": False, "artist": False, "gradient": False}
+            _save_overlay_cfg(cfg)
+            await safe_edit(
+                message,
+                "\u274c Все надписи выключены \u2014 чистая обложка",
+                parse_mode=ParseMode.HTML,
+            )
+            return
+
+        if arg == "on":
+            cfg = {"title": True, "artist": True, "gradient": True}
+            _save_overlay_cfg(cfg)
+            await safe_edit(
+                message,
+                "\u2705 Все надписи включены",
+                parse_mode=ParseMode.HTML,
+            )
+            return
+
+        # Toggle individual element
+        if arg in OVERLAY_OPTIONS:
+            cfg[arg] = not cfg.get(arg, True)
+            _save_overlay_cfg(cfg)
+            state = cfg[arg]
+            icon = "\u2705" if state else "\u274c"
+            action = "включён" if state else "выключен"
+            name = OVERLAY_OPTIONS[arg][0]
+            await safe_edit(
+                message,
+                f"{icon} {name}: {action}",
+                parse_mode=ParseMode.HTML,
+            )
+            return
+
+        # Unknown arg
+        valid = ", ".join(f"<code>{k}</code>" for k in OVERLAY_OPTIONS)
+        await safe_edit(
+            message,
+            f"\u274c Неизвестный параметр: <code>{arg}</code>\n"
+            f"Доступные: {valid}, <code>on</code>, <code>off</code>",
+            parse_mode=ParseMode.HTML,
+        )
+    except Exception as e:
+        log.error("_cmd_overlay error: %s", e, exc_info=True)
+        try:
+            await safe_edit(message, f"\u274c Ошибка: {e}", parse_mode=ParseMode.HTML)
+        except Exception:
+            pass
+
+
 async def _cmd_now(client, message) -> None:
     """Show currently playing track from Yandex Music with cover card."""
     from pyrogram.enums import ParseMode
@@ -1563,14 +1683,18 @@ async def _cmd_now(client, message) -> None:
         # Track link
         track_url = f"https://music.yandex.ru/track/{track.id}" if track.id else ""
 
-        # Generate cover card
+        # Generate cover card (read overlay settings)
         cover_uri = getattr(track, "cover_uri", None)
         cover_path = None
         if cover_uri:
+            ol_cfg = _load_overlay_cfg()
             cover_path = await _run_sync(
                 _generate_now_cover, cover_uri,
                 title=track.title or "",
                 artists=artists_plain,
+                show_title=ol_cfg.get("title", True),
+                show_artist=ol_cfg.get("artist", True),
+                show_gradient=ol_cfg.get("gradient", True),
             )
 
         # build caption
@@ -1817,6 +1941,8 @@ def register(client):
                 await _cmd_now(client, message)
             elif sub in ("bar", "bars", "progressbar"):
                 await _cmd_bar(client, message)
+            elif sub in ("overlay", "style", "cover"):
+                await _cmd_overlay(client, message)
             elif sub == "debug":
                 await _cmd_debug(message)
             elif sub == "token":
