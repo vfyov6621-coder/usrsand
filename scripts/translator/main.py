@@ -53,7 +53,7 @@ def register(client):
     from pyrogram.handlers import MessageHandler
     from pyrogram.enums import ParseMode
     from pyrogram.types import Message
-    from scripts._utils import safe_edit
+    from scripts._utils import cmd, safe_edit
 
     log = logging.getLogger("sandusr.scripts.translator")
 
@@ -109,7 +109,7 @@ def register(client):
 
     client.add_handler(MessageHandler(
         tr_handler,
-        filters.command("tr", prefixes="-") & filters.me,
+        cmd("tr"),
     ))
 
 

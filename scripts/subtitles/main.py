@@ -135,7 +135,7 @@ def register(client):
     from pyrogram.handlers import MessageHandler
     from pyrogram.types import Message
     from pyrogram.enums import ParseMode
-    from scripts._utils import safe_edit
+    from scripts._utils import cmd, safe_edit
 
     log = logging.getLogger("sandusr.scripts.subtitles")
 
@@ -211,7 +211,7 @@ def register(client):
     # Command
     client.add_handler(MessageHandler(
         _sub_cmd,
-        filters.command("sub", prefixes="-") & filters.me,
+        cmd("sub"),
     ))
 
 

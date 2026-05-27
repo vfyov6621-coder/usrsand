@@ -65,7 +65,7 @@ def register(client):
     from pyrogram.handlers import MessageHandler
     from pyrogram.types import Message
     from pyrogram.enums import ParseMode
-    from scripts._utils import safe_edit
+    from scripts._utils import cmd, cmd_neg, safe_edit
 
     log = logging.getLogger("sandusr.scripts.predictions")
 
@@ -155,13 +155,13 @@ def register(client):
     # Counter — fires on ALL outgoing messages (from me)
     client.add_handler(MessageHandler(
         _counter,
-        filters.outgoing & filters.me & ~filters.command(["pred"], prefixes="-"),
+        filters.outgoing & filters.me & ~cmd_neg("pred"),
     ))
 
     # Command
     client.add_handler(MessageHandler(
         _pred_cmd,
-        filters.command("pred", prefixes="-") & filters.me,
+        cmd("pred"),
     ))
 
 

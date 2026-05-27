@@ -125,7 +125,7 @@ def register(client):
     from pyrogram.handlers import MessageHandler
     from pyrogram.types import Message
     from pyrogram.enums import ParseMode
-    from scripts._utils import safe_edit
+    from scripts._utils import cmd, safe_edit
 
     log = logging.getLogger("sandusr.scripts.crypto")
 
@@ -177,7 +177,7 @@ def register(client):
 
     client.add_handler(MessageHandler(
         _crypto_cmd,
-        filters.command("crypto", prefixes="-") & filters.me,
+        cmd("crypto"),
     ))
 
 

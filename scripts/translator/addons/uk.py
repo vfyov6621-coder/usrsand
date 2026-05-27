@@ -7,7 +7,7 @@ def register(client):
     from pyrogram.enums import ParseMode
     from pyrogram.handlers import MessageHandler
     from pyrogram.types import Message
-    from scripts._utils import safe_edit
+    from scripts._utils import cmd, safe_edit
 
     async def tru_handler(client, message: Message):
         reply = message.reply_to_message
@@ -25,7 +25,7 @@ def register(client):
         except Exception as e:
             await safe_edit(message, f"Помилка: {e}")
 
-    client.add_handler(MessageHandler(tru_handler, filters.command("tru", prefixes="-") & filters.reply & filters.me))
+    client.add_handler(MessageHandler(tru_handler, cmd("tru") & filters.reply))
 
 def on_load():
     print("[translator/uk] Loaded. .tru")

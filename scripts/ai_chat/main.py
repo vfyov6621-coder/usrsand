@@ -569,7 +569,7 @@ def register(client):
     from pyrogram.handlers import MessageHandler
     from pyrogram.enums import ParseMode
     from pyrogram.types import Message
-    from scripts._utils import safe_edit
+    from scripts._utils import cmd, cmd_neg, safe_edit
 
     async def ai_handler(client, message: Message):
         global _chat_enabled, _conversation_history
@@ -777,7 +777,7 @@ def register(client):
     # -ai command handler — group 0 (default, runs first)
     client.add_handler(MessageHandler(
         ai_handler,
-        filters.command("ai", prefixes="-") & filters.me,
+        cmd("ai"),
     ))
 
     # AI auto-responder — group 1 (runs AFTER all command handlers)
@@ -827,7 +827,7 @@ def register(client):
     # group=1 — runs AFTER all group 0 command handlers
     client.add_handler(MessageHandler(
         ai_chat_responder,
-        filters.me & ~filters.command(["ai"], prefixes="-"),
+        filters.me & ~cmd_neg("ai"),
     ), group=1)
 
 

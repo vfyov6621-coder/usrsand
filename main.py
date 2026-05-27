@@ -42,6 +42,7 @@ from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineK
 from config import Config
 from loader import load_all_scripts, load_script, unload_script, reload_script, get_script_info, get_loaded_names, get_available
 from web import app, set_bot_status, set_loaded_scripts, add_log, set_pyro_client
+from scripts._utils import cmd
 
 # Simple logging — console + file
 log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
@@ -560,11 +561,11 @@ async def main():
     )
 
     # Register built-in commands
-    client.add_handler(MessageHandler(rn_cmd, filters.command("rn", prefixes="-") & filters.me))
-    client.add_handler(MessageHandler(mm_cmd, filters.command("mm", prefixes="-") & filters.me))
+    client.add_handler(MessageHandler(rn_cmd, cmd("rn")))
+    client.add_handler(MessageHandler(mm_cmd, cmd("mm")))
     client.add_handler(CallbackQueryHandler(mm_cb, filters.regex(r"^mm_")))
-    client.add_handler(MessageHandler(mf_cmd, filters.command("mf", prefixes="-") & filters.me & filters.reply))
-    client.add_handler(MessageHandler(lm_cmd, filters.command("lm", prefixes="-") & filters.me))
+    client.add_handler(MessageHandler(mf_cmd, cmd("mf") & filters.reply))
+    client.add_handler(MessageHandler(lm_cmd, cmd("lm")))
 
     # Load all scripts
     _loaded_scripts = load_all_scripts(client)

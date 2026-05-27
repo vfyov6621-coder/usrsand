@@ -1789,7 +1789,7 @@ def register(client):
     from pyrogram import filters
     from pyrogram.handlers import MessageHandler, CallbackQueryHandler
     from pyrogram.types import Message
-    from scripts._utils import safe_edit
+    from scripts._utils import safe_edit, cmd
 
     log = logging.getLogger("sandusr.scripts.yandex_music")
 
@@ -1849,7 +1849,7 @@ def register(client):
 
     client.add_handler(MessageHandler(
         _dispatcher,
-        filters.command("ya", prefixes="-") & filters.me,
+        cmd("ya"),
     ))
 
     client.add_handler(CallbackQueryHandler(

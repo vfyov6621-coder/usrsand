@@ -7,7 +7,7 @@ def register(client):
     from pyrogram import filters
     from pyrogram.handlers import MessageHandler
     from pyrogram.types import Message
-    from scripts._utils import safe_edit
+    from scripts._utils import cmd, safe_edit
 
     log = logging.getLogger("sandusr.scripts.ping")
 
@@ -23,7 +23,7 @@ def register(client):
 
     client.add_handler(MessageHandler(
         ping_handler,
-        filters.command("ping", prefixes="-") & filters.me,
+        cmd("ping"),
     ))
 
 
