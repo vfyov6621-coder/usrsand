@@ -12,6 +12,7 @@ import traceback
 import importlib
 import random
 import math
+import time
 
 # ═══════════════════════════════════════════════════════════════════════
 #  Connection fixes — MUST be before any imports that use network
@@ -146,6 +147,129 @@ def _check_network():
             issues.append(f"Proxy unreachable {proxy_host}:{proxy_port}: {e}")
 
     return issues
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  NTP time sync — fix "msg_id belongs to over 30 seconds in the future"
+# ═══════════════════════════════════════════════════════════════════════
+
+def _ntp_get_offset(host="pool.ntp.org", port=123, timeout=5):
+    """Query NTP server, return offset in seconds (local - server)."""
+    import struct
+
+    NTP_EPOCH = 2208988800  # 1900-01-01 -> 1970-01-01 delta
+
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.settimeout(timeout)
+
+        # NTP request packet (48 bytes, mode=3 client, version=4)
+        req = b"\x1b" + 47 * b"\x00"
+        sock.sendto(req, (host, port))
+        resp, _ = sock.recvfrom(1024)
+
+        if len(resp) < 48:
+            return None
+
+        unpacked = struct.unpack("!12I", resp[:48])
+        # Transmit timestamp is at bytes 40-47 (words 10-11)
+        tx_sec = unpacked[10]
+        tx_frac = unpacked[11]
+
+        server_time = tx_sec - NTP_EPOCH + tx_frac / 2**32
+        local_time = time.time()
+        offset = local_time - server_time
+
+        return offset
+    except Exception as e:
+        logger.debug("NTP query failed: %s", e)
+        return None
+    finally:
+        try:
+            sock.close()
+        except Exception:
+            pass
+
+
+def _sync_clock():
+    """Check system clock via NTP, try to fix if offset > 10s.
+
+    Returns True if time is OK or was fixed.
+    """
+    add_log("Checking system clock via NTP...")
+
+    for host in ["pool.ntp.org", "time.windows.com", "time.google.com"]:
+        offset = _ntp_get_offset(host)
+        if offset is not None:
+            break
+
+    if offset is None:
+        add_log("NTP check failed — cannot verify clock", "WARN")
+        logger.warning("NTP check failed, skipping clock sync")
+        return True  # can't verify, assume OK
+
+    sign = "+" if offset >= 0 else ""
+    add_log(f"Clock offset: {sign}{offset:.2f}s")
+
+    if abs(offset) <= 10:
+        logger.info("Clock OK (offset %.1fs)", offset)
+        return True
+
+    # Clock is off — try to fix
+    logger.warning("Clock is off by %.1f seconds! Attempting to fix...", offset)
+    add_log(f"Clock is off by {sign}{offset:.2f}s — fixing...", "WARN")
+
+    fixed = False
+
+    # 1) Try Windows time sync
+    if sys.platform == "win32":
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["w32tm", "/resync", "/force"],
+                capture_output=True, text=True, timeout=15,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            if result.returncode == 0:
+                # Re-check offset
+                new_offset = _ntp_get_offset()
+                if new_offset is not None and abs(new_offset) <= 10:
+                    logger.info("Clock synced via w32tm (offset now %.1fs)", new_offset)
+                    add_log("Clock synced via Windows time service")
+                    fixed = True
+                else:
+                    add_log("w32tm ran but clock still off", "WARN")
+        except Exception as e:
+            add_log(f"w32tm failed: {e}", "WARN")
+
+    # 2) Try Linux ntpdate/chrony
+    elif sys.platform == "linux" or sys.platform == "darwin":
+        for cmd in [["sudo", "ntpdate", "-u", "pool.ntp.org"],
+                     ["chronyc", "makestep"],
+                     ["timedatectl", "set-ntp", "true"]]:
+            try:
+                import subprocess
+                subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+                new_offset = _ntp_get_offset()
+                if new_offset is not None and abs(new_offset) <= 10:
+                    logger.info("Clock synced via %s", cmd[0])
+                    add_log(f"Clock synced via {cmd[0]}")
+                    fixed = True
+                    break
+            except Exception:
+                pass
+
+    if not fixed:
+        add_log(
+            f"AUTO-FIX FAILED. Clock is {sign}{offset:.2f}s off.\n"
+            "MANUAL FIX:\n"
+            "  Windows: Settings → Time → Sync now\n"
+            "  Linux: sudo timedatectl set-ntp true\n"
+            "  Or: sudo ntpdate pool.ntp.org",
+            "ERROR",
+        )
+
+    return fixed
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -659,6 +783,17 @@ if __name__ == "__main__":
     else:
         logger.info("Network diagnostics: all OK")
         add_log("Network: all OK")
+
+    # ── Clock sync check (fixes msg_id 30s error) ──
+    clock_ok = _sync_clock()
+    if not clock_ok:
+        logger.error(
+            "System clock is out of sync! Telegram requires ±30s accuracy.\n"
+            "Fix manually:\n"
+            "  Windows: Settings → Time & Language → Sync now\n"
+            "  Linux: sudo timedatectl set-ntp true"
+        )
+        # Don't exit — let Pyrofork try anyway, user can see the error
 
     # ── Start ──
     web_thread = threading.Thread(target=_start_web_panel, args=(port,), daemon=True)
