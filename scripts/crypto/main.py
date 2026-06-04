@@ -177,9 +177,9 @@ def register(client):
 
     client.add_handler(MessageHandler(
         _crypto_cmd,
-        cmd("crypto"),
+        cmd("крипто"),
     ))
 
 
 def on_load():
-    print("[crypto] Loaded. -crypto")
+    print("[crypto] Loaded. -крипто")

@@ -1,4 +1,4 @@
-"""CatArt — ASCII-арт с котами. -catart [номер]"""
+"""CatArt — ASCII-арт с котами. -коты [номер]"""
 
 import os
 
@@ -214,36 +214,36 @@ def register(client):
         try:
             cfg = _load_cfg()
 
-            # -catart (no arg) → random
+            # -коты (no arg) → random
             if not arg:
                 import random
                 cat = random.choice(CATS)
                 await safe_edit(message, f"<pre>{cat}</pre>", parse_mode=ParseMode.HTML)
                 return
 
-            # -catart off
+            # -коты off
             if arg == "off":
                 cfg["enabled"] = False
                 _save_cfg(cfg)
                 await safe_edit(message, "🐱 Кото-арт выключен", parse_mode=ParseMode.HTML)
                 return
 
-            # -catart on
+            # -коты on
             if arg == "on":
                 cfg["enabled"] = True
                 _save_cfg(cfg)
                 await safe_edit(message, "🐱 Кото-арт включён", parse_mode=ParseMode.HTML)
                 return
 
-            # -catart N → specific cat
+            # -коты N → specific cat
             try:
                 n = int(arg)
             except ValueError:
                 total = len(CATS)
                 await safe_edit(message,
                     f"❌ Укажи номер от 1 до {total}\n"
-                    f"<code>-catart</code> — рандом\n"
-                    f"<code>-catart 3</code> — конкретный",
+                    f"<code>-коты</code> — рандом\n"
+                    f"<code>-коты 3</code> — конкретный",
                     parse_mode=ParseMode.HTML,
                 )
                 return
@@ -263,9 +263,9 @@ def register(client):
 
     client.add_handler(MessageHandler(
         _catart_cmd,
-        cmd("catart"),
+        cmd("коты"),
     ))
 
 
 def on_load():
-    print(f"[catart] Loaded. {len(CATS)} котов. -catart")
+    print(f"[catart] Loaded. {len(CATS)} котов. -коты")

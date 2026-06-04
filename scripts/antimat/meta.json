@@ -3,5 +3,6 @@
   "version": "1.0",
   "author": "sandusr",
   "description": "Заменяет мат на звёздочки с нравоучением",
-  "command": "-antimat"
+  "command": "-антимат",
+  "commands": ["-антимат on/off"]
 }

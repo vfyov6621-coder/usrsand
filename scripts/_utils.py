@@ -27,7 +27,7 @@ def cmd(*commands):
 
         client.add_handler(MessageHandler(
             my_handler,
-            cmd("ya") & filters.me,
+            cmd("ям") & filters.me,
         ))
     """
     from pyrogram import filters
@@ -38,7 +38,7 @@ def cmd(*commands):
 def cmd_neg(*commands):
     """Negative match — filters *out* messages that are one of the given commands.
 
-    Example: ``filters.me & cmd_neg("ai")`` — my messages that are NOT ``-ai``.
+    Example: ``filters.me & cmd_neg("ии")`` — my messages that are NOT ``-ии``.
     """
     from pyrogram import filters
     escaped = "|".join(re.escape(c) for c in commands)

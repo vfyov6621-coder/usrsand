@@ -16,7 +16,7 @@ TOKEN_FILE = os.path.join(SCRIPT_DIR, "token.txt")
 BAR_CFG_FILE = os.path.join(SCRIPT_DIR, "bar_settings.json")
 OVERLAY_CFG_FILE = os.path.join(SCRIPT_DIR, "overlay_settings.json")
 
-# Overlay options for -ya now card
+# Overlay options for -ям now card
 OVERLAY_OPTIONS = {
     "title": ("\U0001f4d6 Название трека", "показывать название трека на обложке"),
     "artist": ("\U0001f3a4 Исполнитель", "показывать исполнителя на обложке"),
@@ -79,7 +79,7 @@ def _get_client():
         return _yandex_client
     token = _get_token()
     if not token:
-        raise ValueError("Токен не установлен. Используй -ya token <токен>")
+        raise ValueError("Токен не установлен. Используй -ям token <токен>")
     from yandex_music import Client
     _yandex_client = Client(token).init()
     return _yandex_client
@@ -262,18 +262,18 @@ async def _cmd_help(message) -> None:
 
     text = (
         "<b>\ud83c\udfb5 Яндекс Музыка</b>\n\n"
-        "<code>-ya s</code> <i>запрос</i> \u2014 поиск треков\n"
-        "<code>-ya d</code> <i>id</i> \u2014 скачать/отправить трек\n"
-        "<code>-ya l</code> <i>id</i> \u2014 текст песни\n"
-        "<code>-ya a</code> <i>запрос</i> \u2014 поиск исполнителя\n"
-        "<code>-ya b</code> <i>запрос</i> \u2014 поиск альбома\n"
-        "<code>-ya liked</code> \u2014 любимые треки\n"
-        "<code>-ya chart</code> \u2014 чарт\n"
-        "<code>-ya now</code> \u2014 что сейчас играет\n"
-        "<code>-ya bar</code> \u2014 стиль прогресс-бара\n"
-        "<code>-ya overlay</code> \u2014 надписи на обложке\n"
-        "<code>-ya debug</code> \u2014 диагностика API\n"
-        "<code>-ya token</code> <i>токен</i> \u2014 установить токен\n\n"
+        "<code>-ям s</code> <i>запрос</i> \u2014 поиск треков\n"
+        "<code>-ям d</code> <i>id</i> \u2014 скачать/отправить трек\n"
+        "<code>-ям l</code> <i>id</i> \u2014 текст песни\n"
+        "<code>-ям a</code> <i>запрос</i> \u2014 поиск исполнителя\n"
+        "<code>-ям b</code> <i>запрос</i> \u2014 поиск альбома\n"
+        "<code>-ям liked</code> \u2014 любимые треки\n"
+        "<code>-ям chart</code> \u2014 чарт\n"
+        "<code>-ям now</code> \u2014 что сейчас играет\n"
+        "<code>-ям bar</code> \u2014 стиль прогресс-бара\n"
+        "<code>-ям overlay</code> \u2014 надписи на обложке\n"
+        "<code>-ям debug</code> \u2014 диагностика API\n"
+        "<code>-ям token</code> <i>токен</i> \u2014 установить токен\n\n"
         "<i>Получить токен: </i>"
         '<a href="https://oauth.yandex.ru/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d">'
         "OAuth авторизация</a>"
@@ -293,7 +293,7 @@ async def _cmd_search(client, message) -> None:
     if len(parts) < 3:
         try:
             await message.edit_text(
-                "\u274c Использование: <code>-ya s запрос</code>",
+                "\u274c Использование: <code>-ям s запрос</code>",
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
@@ -353,7 +353,7 @@ async def _cmd_download(client, message) -> None:
     if len(parts) < 3:
         try:
             await message.edit_text(
-                "\u274c Использование: <code>-ya d id_трека</code>",
+                "\u274c Использование: <code>-ям d id_трека</code>",
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
@@ -393,7 +393,7 @@ async def _cmd_lyrics(message) -> None:
     if len(parts) < 3:
         try:
             await message.edit_text(
-                "\u274c Использование: <code>-ya l id_трека</code>",
+                "\u274c Использование: <code>-ям l id_трека</code>",
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
@@ -475,7 +475,7 @@ async def _cmd_artist(client, message) -> None:
     if len(parts) < 3:
         try:
             await message.edit_text(
-                "\u274c Использование: <code>-ya a запрос</code>",
+                "\u274c Использование: <code>-ям a запрос</code>",
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
@@ -567,7 +567,7 @@ async def _cmd_album(client, message) -> None:
     if len(parts) < 3:
         try:
             await message.edit_text(
-                "\u274c Использование: <code>-ya b запрос</code>",
+                "\u274c Использование: <code>-ям b запрос</code>",
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
@@ -1450,7 +1450,7 @@ def _fetch_ynison_state():
 
 
 async def _cmd_bar(client, message) -> None:
-    """Set progress bar preset. Usage: -ya bar | -ya bar 1"""
+    """Set progress bar preset. Usage: -ям bar | -ям bar 1"""
     from pyrogram.enums import ParseMode
 
     parts = message.text.split()
@@ -1460,7 +1460,7 @@ async def _cmd_bar(client, message) -> None:
         cfg = _load_bar_cfg()
         current = cfg.get("preset", -1)
 
-        # ── -ya bar (no arg) → show list ──
+        # ── -ям bar (no arg) → show list ──
         if not arg:
             lines = ["<b>Стиль прогресс-бара</b>\n"]
             for pid, (name, desc) in BAR_PRESETS.items():
@@ -1470,15 +1470,15 @@ async def _cmd_bar(client, message) -> None:
             await message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML)
             return
 
-        # ── -ya bar N → set preset ──
+        # ── -ям bar N → set preset ──
         try:
             preset = int(arg)
         except ValueError:
-            await message.edit_text("❌ Укажи номер. Смотри: <code>-ya bar</code>",
+            await message.edit_text("❌ Укажи номер. Смотри: <code>-ям bar</code>",
                                     parse_mode=ParseMode.HTML)
             return
         if preset not in BAR_PRESETS:
-            await message.edit_text(f"❌ Нет пресета {preset}. Смотри: <code>-ya bar</code>",
+            await message.edit_text(f"❌ Нет пресета {preset}. Смотри: <code>-ям bar</code>",
                                     parse_mode=ParseMode.HTML)
             return
         cfg["preset"] = preset
@@ -1512,14 +1512,14 @@ def _save_overlay_cfg(cfg: dict) -> None:
 
 
 async def _cmd_overlay(client, message) -> None:
-    """Toggle overlay elements on -ya now cover card.
+    """Toggle overlay elements on -ям now cover card.
 
-    -ya overlay          → show current settings
-    -ya overlay off      → remove ALL text (clean cover only)
-    -ya overlay on       → restore all defaults
-    -ya overlay title    → toggle title
-    -ya overlay artist   → toggle artist
-    -ya overlay gradient → toggle gradient
+    -ям overlay          → show current settings
+    -ям overlay off      → remove ALL text (clean cover only)
+    -ям overlay on       → restore all defaults
+    -ям overlay title    → toggle title
+    -ям overlay artist   → toggle artist
+    -ям overlay gradient → toggle gradient
     """
     from pyrogram.enums import ParseMode
     from scripts._utils import safe_edit
@@ -1532,18 +1532,18 @@ async def _cmd_overlay(client, message) -> None:
     try:
         if arg == "":
             # ── show current ──
-            lines = ["<b>\U0001f3a8 Настройки обложки (-ya now)</b>\n"]
+            lines = ["<b>\U0001f3a8 Настройки обложки (-ям now)</b>\n"]
             for key, (name, desc) in OVERLAY_OPTIONS.items():
                 state = cfg.get(key, True)
                 icon = "\u2705" if state else "\u274c"
                 lines.append(f"  {icon} <code>{key}</code> \u2014 {desc}")
             lines.append(
                 f"\n<i>Примеры:</i>\n"
-                "  <code>-ya overlay off</code> \u2014 чистая обложка\n"
-                "  <code>-ya overlay on</code> \u2014 всё по умолчанию\n"
-                "  <code>-ya overlay title</code> \u2014 вкл/выкл название\n"
-                "  <code>-ya overlay artist</code> \u2014 вкл/выкл исполнителя\n"
-                "  <code>-ya overlay gradient</code> \u2014 вкл/выкл градиент"
+                "  <code>-ям overlay off</code> \u2014 чистая обложка\n"
+                "  <code>-ям overlay on</code> \u2014 всё по умолчанию\n"
+                "  <code>-ям overlay title</code> \u2014 вкл/выкл название\n"
+                "  <code>-ям overlay artist</code> \u2014 вкл/выкл исполнителя\n"
+                "  <code>-ям overlay gradient</code> \u2014 вкл/выкл градиент"
             )
             await safe_edit(message, "\n".join(lines), parse_mode=ParseMode.HTML)
             return
@@ -1872,7 +1872,7 @@ async def _cmd_token(message) -> None:
     if len(parts) < 3:
         try:
             await message.edit_text(
-                "\u274c Использование: <code>-ya token YOUR_TOKEN</code>\n\n"
+                "\u274c Использование: <code>-ям token YOUR_TOKEN</code>\n\n"
                 '<i>Получить токен: </i>'
                 '<a href="https://oauth.yandex.ru/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d">'
                 "OAuth авторизация</a>",
@@ -1918,7 +1918,7 @@ def register(client):
     log = logging.getLogger("sandusr.scripts.yandex_music")
 
     async def _dispatcher(client, message: Message):
-        """Single entry point: -ya [sub-command] [args...]"""
+        """Single entry point: -ям [sub-command] [args...]"""
         parts = message.text.split()
         sub = parts[1] if len(parts) > 1 else ""
 
@@ -1975,7 +1975,7 @@ def register(client):
 
     client.add_handler(MessageHandler(
         _dispatcher,
-        cmd("ya"),
+        cmd("ям"),
     ))
 
     client.add_handler(CallbackQueryHandler(

@@ -3,5 +3,6 @@
   "version": "1.0",
   "author": "sandusr",
   "description": "Авто-реакция 🔥 на длинные сообщения",
-  "command": "-autofire"
+  "command": "-автоогонь",
+  "commands": ["-автоогонь on/off"]
 }

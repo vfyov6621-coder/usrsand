@@ -86,12 +86,12 @@ async def _cmd_help(client, message) -> None:
 
     text = (
         "<b>\u2728 Премиум эмоджи</b>\n\n"
-        "<code>-prem grab</code> \u2014 reply to msg, extract all custom emoji IDs\n"
-        "<code>-prem save \u003cname\u003e</code> \u2014 reply to msg with emoji, save it\n"
-        "<code>-prem list</code> \u2014 show saved emojis\n"
-        "<code>-prem del \u003cname\u003e</code> \u2014 remove saved emoji\n"
-        "<code>-prem use \u003cname\u003e</code> \u2014 send saved emoji to chat\n"
-        "<code>-prem id \u003ccustom_emoji_id\u003e</code> \u2014 send emoji by ID directly\n"
+        "<code>-прем собрать</code> \u2014 reply to msg, extract all custom emoji IDs\n"
+        "<code>-прем сохранить \u003cname\u003e</code> \u2014 reply to msg with emoji, save it\n"
+        "<code>-прем список</code> \u2014 show saved emojis\n"
+        "<code>-прем удалить \u003cname\u003e</code> \u2014 remove saved emoji\n"
+        "<code>-прем отправить \u003cname\u003e</code> \u2014 send saved emoji to chat\n"
+        "<code>-прем id \u003ccustom_emoji_id\u003e</code> \u2014 send emoji by ID directly\n"
     )
     from scripts._utils import safe_edit
     await safe_edit(message, text, parse_mode=ParseMode.HTML)
@@ -105,7 +105,7 @@ async def _cmd_grab(client, message) -> None:
     if not message.reply_to_message:
         await safe_edit(
             message,
-            "\u274c Ответьте на сообщение с премиум эмоджи:\n<code>-prem grab</code>",
+            "\u274c Ответьте на сообщение с премиум эмоджи:\n<code>-прем собрать</code>",
             parse_mode=ParseMode.HTML,
         )
         return
@@ -178,7 +178,7 @@ async def _cmd_save(client, message) -> None:
     if len(parts) < 2:
         await safe_edit(
             message,
-            "\u274c Использование: <code>-prem save \u003cname\u003e</code> (ответ на сообщение с эмоджи)",
+            "\u274c Использование: <code>-прем сохранить \u003cname\u003e</code> (ответ на сообщение с эмоджи)",
             parse_mode=ParseMode.HTML,
         )
         return
@@ -266,7 +266,7 @@ async def _cmd_list(client, message) -> None:
     if not data:
         await safe_edit(
             message,
-            "\U0001f5c2 Список пуст. Сохраните эмоджи:\n<code>-prem save \u003cname\u003e</code> (ответ на эмоджи)",
+            "\U0001f5c2 Список пуст. Сохраните эмоджи:\n<code>-прем сохранить \u003cname\u003e</code> (ответ на эмоджи)",
             parse_mode=ParseMode.HTML,
         )
         return
@@ -278,9 +278,9 @@ async def _cmd_list(client, message) -> None:
     text = "\n".join(lines)
     text += (
         "\n\n<i>Использование:</i>\n"
-        "<code>-prem use \u003cname\u003e</code> \u2014 отправить эмоджи\n"
-        "<code>-prem id \u003cID\u003e</code> \u2014 отправить по ID\n"
-        "<code>-prem del \u003cname\u003e</code> \u2014 удалить"
+        "<code>-прем отправить \u003cname\u003e</code> \u2014 отправить эмоджи\n"
+        "<code>-прем id \u003cID\u003e</code> \u2014 отправить по ID\n"
+        "<code>-прем удалить \u003cname\u003e</code> \u2014 удалить"
     )
 
     if len(text) > 4000:
@@ -298,7 +298,7 @@ async def _cmd_del(client, message) -> None:
     if len(parts) < 2:
         await safe_edit(
             message,
-            "\u274c Использование: <code>-prem del \u003cname\u003e</code>",
+            "\u274c Использование: <code>-прем удалить \u003cname\u003e</code>",
             parse_mode=ParseMode.HTML,
         )
         return
@@ -331,7 +331,7 @@ async def _cmd_use(client, message) -> None:
     if len(parts) < 2:
         await safe_edit(
             message,
-            "\u274c Использование: <code>-prem use \u003cname\u003e</code>",
+            "\u274c Использование: <code>-прем отправить \u003cname\u003e</code>",
             parse_mode=ParseMode.HTML,
         )
         return
@@ -341,7 +341,7 @@ async def _cmd_use(client, message) -> None:
     if name not in data:
         await safe_edit(
             message,
-            f"\u274c Эмоджи <code>{name}</code> не найден. Список: <code>-prem list</code>",
+            f"\u274c Эмоджи <code>{name}</code> не найден. Список: <code>-прем список</code>",
             parse_mode=ParseMode.HTML,
         )
         return
@@ -359,7 +359,7 @@ async def _cmd_send_id(client, message) -> None:
     if len(parts) < 2:
         await safe_edit(
             message,
-            "\u274c Использование: <code>-prem id \u003ccustom_emoji_id\u003e</code>",
+            "\u274c Использование: <code>-прем id \u003ccustom_emoji_id\u003e</code>",
             parse_mode=ParseMode.HTML,
         )
         return
@@ -391,7 +391,7 @@ async def _cmd_msg(client, message) -> None:
     if len(parts) < 2:
         await safe_edit(
             message,
-            "\u274c Использование: <code>-prem msg текст :имя_эмоджи: текст</code>\n"
+            "\u274c Использование: <code>-прем сообщение текст :имя_эмоджи: текст</code>\n"
             "<i>Заменяет :имя: на сохранённые премиум эмоджи</i>",
             parse_mode=ParseMode.HTML,
         )
@@ -403,7 +403,7 @@ async def _cmd_msg(client, message) -> None:
     if not data:
         await safe_edit(
             message,
-            "\u2753 Сначала сохраните эмоджи: <code>-prem save \u003cname\u003e</code>",
+            "\u2753 Сначала сохраните эмоджи: <code>-прем сохранить \u003cname\u003e</code>",
             parse_mode=ParseMode.HTML,
         )
         return
@@ -525,19 +525,19 @@ def register(client):
         sub = parts[1] if len(parts) > 1 else ""
 
         try:
-            if sub in ("grab", "extract", "id", "ids"):
+            if sub in ("собрать", "grab", "extract", "id", "ids"):
                 await _cmd_grab(client, message)
-            elif sub in ("save", "add", "+"):
+            elif sub in ("сохранить", "save", "add", "+"):
                 await _cmd_save(client, message)
-            elif sub in ("list", "ls", "all"):
+            elif sub in ("список", "list", "ls", "all"):
                 await _cmd_list(client, message)
-            elif sub in ("del", "rm", "remove", "-"):
+            elif sub in ("удалить", "del", "rm", "remove", "-"):
                 await _cmd_del(client, message)
-            elif sub in ("use", "send", "show"):
+            elif sub in ("отправить", "use", "send", "show"):
                 await _cmd_use(client, message)
             elif sub == "id":
                 await _cmd_send_id(client, message)
-            elif sub in ("msg", "text", "write"):
+            elif sub in ("сообщение", "msg", "text", "write"):
                 await _cmd_msg(client, message)
             else:
                 await _cmd_help(client, message)
@@ -547,13 +547,13 @@ def register(client):
 
     client.add_handler(MessageHandler(
         _dispatcher,
-        cmd("prem"),
+        cmd("прем"),
     ))
 
 
 def on_load():
     n = len(_load_emojis())
-    print(f"[premium_emoji] Loaded ({n} saved)")
+    print(f"[premium_emoji] Loaded ({n} saved) (-прем)")
 
 
 def on_unload():

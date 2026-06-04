@@ -20,7 +20,7 @@ async def _cmd_ban(client, message) -> None:
     if not message.reply_to_message:
         await safe_edit(
             message,
-            "\u274c Ответьте на сообщение пользователя\n<code>-ban [причина]</code>",
+            "\u274c Ответьте на сообщение пользователя\n<code>-админ бан [причина]</code>",
             parse_mode=ParseMode.HTML,
         )
         return
@@ -103,7 +103,7 @@ async def _cmd_unban(client, message) -> None:
         await safe_edit(
             message,
             "\u274c Укажите пользователя:\n"
-            "<code>-unban @username</code> или <code>-unban ID</code> или ответьте на сообщение",
+            "<code>-админ разбан @username</code> или <code>-админ разбан ID</code> или ответьте на сообщение",
             parse_mode=ParseMode.HTML,
         )
         return
@@ -128,7 +128,7 @@ async def _cmd_kick(client, message) -> None:
     if not message.reply_to_message:
         await safe_edit(
             message,
-            "\u274c Ответьте на сообщение пользователя\n<code>-kick [причина]</code>",
+            "\u274c Ответьте на сообщение пользователя\n<code>-админ кик [причина]</code>",
             parse_mode=ParseMode.HTML,
         )
         return
@@ -181,9 +181,9 @@ async def _cmd_mute(client, message) -> None:
         await safe_edit(
             message,
             "\u274c Ответьте на сообщение пользователя\n"
-            "<code>-mute [часы]</code> — мут навсегда\n"
-            "<code>-mute 2</code> — мут на 2 часа\n"
-            "<code>-mute 30m</code> — мут на 30 минут",
+            "<code>-админ мут [часы]</code> — мут навсегда\n"
+            "<code>-админ мут 2</code> — мут на 2 часа\n"
+            "<code>-админ мут 30m</code> — мут на 30 минут",
             parse_mode=ParseMode.HTML,
         )
         return
@@ -263,7 +263,7 @@ async def _cmd_unmute(client, message) -> None:
     if not message.reply_to_message or not message.reply_to_message.from_user:
         await safe_edit(
             message,
-            "\u274c Ответьте на сообщение пользователя\n<code>-unmute</code>",
+            "\u274c Ответьте на сообщение пользователя\n<code>-админ размут</code>",
             parse_mode=ParseMode.HTML,
         )
         return
@@ -308,8 +308,8 @@ async def _cmd_block(client, message) -> None:
         if len(parts) < 2:
             await safe_edit(
                 message,
-                "\u274c В ЛС: просто <code>-block</code>\n"
-                "\u0412 \u0433\u0440\u0443\u043f\u043f\u0435: ответьте на сообщение или <code>-block @username / ID</code>",
+                "\u274c В ЛС: просто <code>-админ блок</code>\n"
+                "\u0412 \u0433\u0440\u0443\u043f\u043f\u0435: ответьте на сообщение или <code>-админ блок @username / ID</code>",
                 parse_mode=ParseMode.HTML,
             )
             return
@@ -356,8 +356,8 @@ async def _cmd_unblock(client, message) -> None:
         if len(parts) < 2:
             await safe_edit(
                 message,
-                "\u274c В ЛС: просто <code>-unblock</code>\n"
-                "\u0412 \u0433\u0440\u0443\u043f\u043f\u0435: <code>-unblock @username / ID</code>",
+                "\u274c В ЛС: просто <code>-админ разблок</code>\n"
+                "\u0412 \u0433\u0440\u0443\u043f\u043f\u0435: <code>-админ разблок @username / ID</code>",
                 parse_mode=ParseMode.HTML,
             )
             return
@@ -397,15 +397,15 @@ async def _cmd_help(client, message) -> None:
     text = (
         "<b>\U0001f528 Админ-инструменты</b>\n\n"
         "\U0001f534 <b>В группе</b> (требуются права админа):\n"
-        "<code>-ban [причина]</code> \u2014 забанить (ответ на сообщение)\n"
-        "<code>-unban @user / ID</code> \u2014 разбанить\n"
-        "<code>-kick [причина]</code> \u2014 кикнуть (бан + разбан)\n"
-        "<code>-mute [2h / 30m / 1d]</code> \u2014 замьютить\n"
-        "<code>-unmute</code> \u2014 размьютить (ответ на сообщение)\n\n"
+        "<code>-админ бан [причина]</code> \u2014 забанить (ответ на сообщение)\n"
+        "<code>-админ разбан @user / ID</code> \u2014 разбанить\n"
+        "<code>-админ кик [причина]</code> \u2014 кикнуть (бан + разбан)\n"
+        "<code>-админ мут [2h / 30m / 1d]</code> \u2014 замьютить\n"
+        "<code>-админ размут</code> \u2014 размьютить (ответ на сообщение)\n\n"
         "\U0001f535 <b>В ЛС:</b>\n"
-        "<code>-block</code> \u2014 заблокировать пользователя\n"
-        "<code>-unblock</code> \u2014 разблокировать\n\n"
-        "<i>В группе -block/-unblock работают через ответ или @username</i>"
+        "<code>-админ блок</code> \u2014 заблокировать пользователя\n"
+        "<code>-админ разблок</code> \u2014 разблокировать\n\n"
+        "<i>В группе -админ блок/-админ разблок работают через ответ или @username</i>"
     )
     await safe_edit(message, text, parse_mode=ParseMode.HTML)
 
@@ -423,19 +423,19 @@ def register(client):
         sub = parts[1] if len(parts) > 1 else ""
 
         try:
-            if sub in ("ban",):
+            if sub in ("бан", "ban"):
                 await _cmd_ban(client, message)
-            elif sub in ("unban", "pardon"):
+            elif sub in ("разбан", "unban", "pardon"):
                 await _cmd_unban(client, message)
-            elif sub in ("kick",):
+            elif sub in ("кик", "kick"):
                 await _cmd_kick(client, message)
-            elif sub in ("mute", "silence", "shh"):
+            elif sub in ("мут", "mute", "silence", "shh"):
                 await _cmd_mute(client, message)
-            elif sub in ("unmute", "unsilence", "talk"):
+            elif sub in ("размут", "unmute", "unsilence", "talk"):
                 await _cmd_unmute(client, message)
-            elif sub in ("block",):
+            elif sub in ("блок", "block"):
                 await _cmd_block(client, message)
-            elif sub in ("unblock",):
+            elif sub in ("разблок", "unblock"):
                 await _cmd_unblock(client, message)
             else:
                 await _cmd_help(client, message)
@@ -445,12 +445,12 @@ def register(client):
 
     client.add_handler(MessageHandler(
         _dispatcher,
-        cmd("admin"),
+        cmd("админ"),
     ))
 
 
 def on_load():
-    print("[admin] Loaded")
+    print("[admin] Loaded (-админ)")
 
 
 def on_unload():

@@ -23,9 +23,9 @@ def register(client):
 
     client.add_handler(MessageHandler(
         ping_handler,
-        cmd("ping"),
+        cmd("пинг"),
     ))
 
 
 def on_load():
-    print("[ping] Loaded. .ping")
+    print("[ping] Loaded. -пинг")

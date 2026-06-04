@@ -109,9 +109,9 @@ def register(client):
                     f"🔮 <b>Предсказания</b>\n\n"
                     f"Статус: {status}\n"
                     f"Каждые <b>{n}</b> сообщений\n\n"
-                    f"<code>-pred N</code> — интервал (N сообщений)\n"
-                    f"<code>-pred off</code> — выключить\n"
-                    f"<code>-pred on</code> — включить",
+                    f"<code>-предсказания N</code> — интервал (N сообщений)\n"
+                    f"<code>-предсказания off</code> — выключить\n"
+                    f"<code>-предсказания on</code> — включить",
                     parse_mode=ParseMode.HTML,
                 )
                 return
@@ -135,7 +135,7 @@ def register(client):
                 n = int(arg)
             except ValueError:
                 await safe_edit(message,
-                    "❌ Укажи число. Пример: <code>-pred 5</code>",
+                    "❌ Укажи число. Пример: <code>-предсказания 5</code>",
                     parse_mode=ParseMode.HTML,
                 )
                 return
@@ -155,15 +155,15 @@ def register(client):
     # Counter — fires on ALL outgoing messages (from me)
     client.add_handler(MessageHandler(
         _counter,
-        filters.outgoing & filters.me & ~cmd_neg("pred"),
+        filters.outgoing & filters.me & ~cmd_neg("предсказания"),
     ))
 
     # Command
     client.add_handler(MessageHandler(
         _pred_cmd,
-        cmd("pred"),
+        cmd("предсказания"),
     ))
 
 
 def on_load():
-    print("[predictions] Loaded. -pred N / -pred off/on")
+    print("[predictions] Loaded. -предсказания N / -предсказания off/on")

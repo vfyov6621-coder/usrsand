@@ -1,7 +1,8 @@
 {
-    "name": "yandex_music",
-    "version": "1.0.0",
-    "description": "Яндекс Музыка — поиск, скачивание треков, тексты, чарт, лайки",
-    "commands": [".ya", ".ya s", ".ya d", ".ya l", ".ya a", ".ya b", ".ya liked", ".ya chart", ".ya token"],
-    "author": "sandusr"
+  "name": "yandex_music",
+  "version": "1.0.0",
+  "description": "Яндекс Музыка — поиск, скачивание треков, тексты, чарт, лайки",
+  "author": "sandusr",
+  "command": "-ям",
+  "commands": ["-ям s/d/l/a/b <запрос>", "-ям liked/chart/now", "-ям bar/overlay", "-ям token <токен>", "-ям debug"]
 }

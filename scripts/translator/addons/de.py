@@ -1,4 +1,4 @@
-"""Translator addon: Deutsch (.trd)"""
+"""Translator addon: Deutsch (.прн)"""
 
 def register(client):
     import asyncio
@@ -25,7 +25,7 @@ def register(client):
         except Exception as e:
             await safe_edit(message, f"Fehler: {e}")
 
-    client.add_handler(MessageHandler(trd_handler, cmd("trd") & filters.reply))
+    client.add_handler(MessageHandler(trd_handler, cmd("прн") & filters.reply))
 
 def on_load():
-    print("[translator/de] Loaded. .trd")
+    print("[translator/de] Loaded. .прн")

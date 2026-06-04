@@ -77,8 +77,8 @@ def register(client):
                 f"🔥 <b>Авто-реакция</b>\n\n"
                 f"Статус: {status}\n"
                 f"Минимум символов: {ml}\n\n"
-                f"<code>-autofire on</code>\n"
-                f"<code>-autofire off</code>",
+                f"<code>-автоогонь on</code>\n"
+                f"<code>-автоогонь off</code>",
                 parse_mode=ParseMode.HTML,
             )
 
@@ -91,9 +91,9 @@ def register(client):
     # Command
     client.add_handler(MessageHandler(
         _autofire_cmd,
-        cmd("autofire"),
+        cmd("автоогонь"),
     ))
 
 
 def on_load():
-    print("[autofire] Loaded. -autofire on/off")
+    print("[autofire] Loaded. -автоогонь on/off")

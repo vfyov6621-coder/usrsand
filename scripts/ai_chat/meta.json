@@ -3,7 +3,8 @@
   "version": "1.0",
   "author": "sandusr",
   "description": "Локальный AI ассистент через Ollama (без цензуры)",
-  "command": ".ai",
+  "command": "-ии",
+  "commands": ["-ии <вопрос>", "-ии on/off", "-ии clear", "-ии model <name>", "-ии status", "-ии sys <промпт>", "-ии analyze @user [N]", "-ии summary [N]"],
   "addons": [],
   "tabs": []
 }

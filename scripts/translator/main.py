@@ -1,4 +1,4 @@
-"""Translator — -tr [lang] <text> or reply
+"""Translator — -перевод [lang] <text> or reply
 Uses MyMemory API (free, works without VPN, no Google).
 """
 
@@ -84,8 +84,8 @@ def register(client):
                         return
                 else:
                     await safe_edit(message,
-                        "Используйте: <code>-tr [lang] &lt;текст&gt;</code>\n"
-                        "Или ответьте на сообщение командой <code>-tr [lang]</code>",
+                        "Используйте: <code>-перевод [lang] &lt;текст&gt;</code>\n"
+                        "Или ответьте на сообщение командой <code>-перевод [lang]</code>",
                         parse_mode=ParseMode.HTML
                     )
                     return
@@ -109,9 +109,9 @@ def register(client):
 
     client.add_handler(MessageHandler(
         tr_handler,
-        cmd("tr"),
+        cmd("перевод"),
     ))
 
 
 def on_load():
-    print("[translator] Loaded. -tr [lang] <text>")
+    print("[translator] Loaded. -перевод [lang] <text>")

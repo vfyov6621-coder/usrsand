@@ -3,5 +3,6 @@
   "version": "1.0",
   "author": "sandusr",
   "description": "Тупые предсказания каждые N сообщений",
-  "command": "-pred"
+  "command": "-предсказания",
+  "commands": ["-предсказания [N]", "-предсказания on/off"]
 }

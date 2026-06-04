@@ -131,8 +131,8 @@ def register(client):
             await safe_edit(message,
                 f"🧹 <b>Анти-мат</b>\n\n"
                 f"Статус: {status}\n\n"
-                f"<code>-antimat on</code>\n"
-                f"<code>-antimat off</code>",
+                f"<code>-антимат on</code>\n"
+                f"<code>-антимат off</code>",
                 parse_mode=ParseMode.HTML,
             )
 
@@ -145,9 +145,9 @@ def register(client):
     # Command
     client.add_handler(MessageHandler(
         _antimat_cmd,
-        cmd("antimat"),
+        cmd("антимат"),
     ))
 
 
 def on_load():
-    print("[antimat] Loaded. -antimat on/off")
+    print("[antimat] Loaded. -антимат on/off")

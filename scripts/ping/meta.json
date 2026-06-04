@@ -1,7 +1,8 @@
 {
-  "name": "Ping",
+  "name": "Пинг",
   "version": "1.0",
   "author": "sandusr",
   "description": "Простой пинг юзербота",
-  "command": ".ping"
+  "command": "-пинг",
+  "commands": ["-пинг"]
 }

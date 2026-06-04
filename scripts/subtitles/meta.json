@@ -3,5 +3,6 @@
   "version": "1.0",
   "author": "sandusr",
   "description": "Голосовые → текст с кучей ошибок и смехом",
-  "command": "-sub"
+  "command": "-субтитры",
+  "commands": ["-субтитры on/off"]
 }

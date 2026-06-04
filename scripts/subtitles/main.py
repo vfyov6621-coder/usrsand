@@ -197,8 +197,8 @@ def register(client):
             await safe_edit(message,
                 f"📝 <b>Субтитры</b>\n\n"
                 f"Статус: {status}\n\n"
-                f"<code>-sub on</code>\n"
-                f"<code>-sub off</code>",
+                f"<code>-субтитры on</code>\n"
+                f"<code>-субтитры off</code>",
                 parse_mode=ParseMode.HTML,
             )
 
@@ -211,9 +211,9 @@ def register(client):
     # Command
     client.add_handler(MessageHandler(
         _sub_cmd,
-        cmd("sub"),
+        cmd("субтитры"),
     ))
 
 
 def on_load():
-    print("[subtitles] Loaded. -sub on/off")
+    print("[subtitles] Loaded. -субтитры on/off")

@@ -3,5 +3,6 @@
   "version": "1.0",
   "author": "sandusr",
   "description": "Погода через Open-Meteo с ASCII-арт",
-  "command": ".wea"
+  "command": "-погода",
+  "commands": ["-погода <город>"]
 }

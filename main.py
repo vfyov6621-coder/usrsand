@@ -9,6 +9,7 @@ import asyncio
 import logging
 import threading
 import traceback
+import json
 import importlib
 import random
 import math
@@ -323,7 +324,7 @@ def _patch_pyrogram_timeout():
 
 
 # ═══════════════════════════════════════════════════════════════════════
-#  -mm — menu
+#  -меню — menu
 # ═══════════════════════════════════════════════════════════════════════
 
 MM_KEYBOARD = InlineKeyboardMarkup([
@@ -377,14 +378,14 @@ async def mm_cb(client, callback: CallbackQuery):
 
 
 # ═══════════════════════════════════════════════════════════════════════
-#  -mf  —  set menu photo from reply
+#  -мф  —  set menu photo from reply
 # ═══════════════════════════════════════════════════════════════════════
 
 async def mf_cmd(client, message: Message):
     """Reply to a photo to set it as the bot menu photo."""
     if not message.reply_to_message:
         await safe_edit(message,
-            "❌ Ответьте на сообщение с фото:\n<code>-mf</code> (ответ на фото)",
+            "❌ Ответьте на сообщение с фото:\n<code>-мф</code> (ответ на фото)",
             parse_mode=ParseMode.HTML,
         )
         return
@@ -407,7 +408,7 @@ async def mf_cmd(client, message: Message):
 
         if file:
             await safe_edit(message,
-                "✅ Фото установлено!\n\nТеперь <code>-mm</code> покажет это фото.",
+                "✅ Фото установлено!\n\nТеперь <code>-меню</code> покажет это фото.",
                 parse_mode=ParseMode.HTML,
             )
             add_log("Menu photo updated")
@@ -418,18 +419,18 @@ async def mf_cmd(client, message: Message):
 
 
 # ═══════════════════════════════════════════════════════════════════════
-#  -rn  —  randomizer (non-uniform distribution)
+#  -рн  —  randomizer (non-uniform distribution)
 # ═══════════════════════════════════════════════════════════════════════
 
 async def rn_cmd(client, message: Message):
-    """Random number with different probabilities. Usage: -rn 1 10"""
+    """Random number with different probabilities. Usage: -рн 1 10"""
     from pyrogram.enums import ParseMode
 
     parts = message.text.split()
     if len(parts) < 3:
         await safe_edit(message,
-            "❌ Использование: <code>-rn от до</code>\n"
-            "Пример: <code>-rn 1 10</code>",
+            "❌ Использование: <code>-рн от до</code>\n"
+            "Пример: <code>-рн 1 10</code>",
             parse_mode=ParseMode.HTML,
         )
         return
@@ -438,7 +439,7 @@ async def rn_cmd(client, message: Message):
         lo = int(parts[1])
         hi = int(parts[2])
     except ValueError:
-        await safe_edit(message, "❌ Укажи числа. Пример: <code>-rn 1 10</code>", parse_mode=ParseMode.HTML)
+        await safe_edit(message, "❌ Укажи числа. Пример: <code>-рн 1 10</code>", parse_mode=ParseMode.HTML)
         return
 
     if lo > hi:
@@ -477,43 +478,59 @@ async def rn_cmd(client, message: Message):
 
 
 # ═══════════════════════════════════════════════════════════════════════
-#  -lm  —  script management
+#  -лм  —  script management
 # ═══════════════════════════════════════════════════════════════════════
 
 async def lm_cmd(client, message: Message):
-    """Handler for -lm command — script management."""
+    """Handler for -лм command — script management."""
     args = message.text.split(maxsplit=1)
     if len(args) < 2:
-        await safe_edit(message,
-            "<b>Управление скриптами:</b>\n\n"
-            "  <code>-lm load &lt;id&gt;</code> — загрузить скрипт\n"
-            "  <code>-lm unload &lt;id&gt;</code> — выгрузить\n"
-            "  <code>-lm reload &lt;id&gt;</code> — перезагрузить\n"
-            "  <code>-lm list</code> — список скриптов\n"
-            "  <code>-lm info &lt;id&gt;</code> — инфо о скрипте",
-            parse_mode=ParseMode.HTML,
-        )
+        await _lm_list(message)
         return
 
     action = args[1].strip()
-    add_log(f"-lm {action} from {message.from_user.id}" if message.from_user else f"-lm {action}")
+    add_log(f"-лм {action} from {message.from_user.id}" if message.from_user else f"-лм {action}")
 
-    if action == "list":
+    if action == "list" or action == "список":
         await _lm_list(message)
-    elif action.startswith("load "):
-        sid = action[5:].strip()
+    elif action.startswith("load ") or action.startswith("загрузить "):
+        if action.startswith("загрузить "):
+            sid = action[len("загрузить "):].strip()
+        else:
+            sid = action[5:].strip()
         await _lm_load(client, message, sid)
-    elif action.startswith("unload "):
-        sid = action[7:].strip()
+    elif action.startswith("unload ") or action.startswith("выгрузить "):
+        if action.startswith("выгрузить "):
+            sid = action[len("выгрузить "):].strip()
+        else:
+            sid = action[7:].strip()
         await _lm_unload(message, sid)
-    elif action.startswith("reload "):
-        sid = action[7:].strip()
+    elif action.startswith("reload ") or action.startswith("перезагрузить "):
+        if action.startswith("перезагрузить "):
+            sid = action[len("перезагрузить "):].strip()
+        else:
+            sid = action[7:].strip()
         await _lm_reload(client, message, sid)
-    elif action.startswith("info "):
-        sid = action[5:].strip()
+    elif action.startswith("info ") or action.startswith("инфо "):
+        if action.startswith("инфо "):
+            sid = action[len("инфо "):].strip()
+        else:
+            sid = action[5:].strip()
         await _lm_info(message, sid)
     else:
         await safe_edit(message, f"Неизвестная команда: <code>{action}</code>", parse_mode=ParseMode.HTML)
+
+
+def _read_meta(script_id):
+    """Read meta.json for a script, return dict or None."""
+    try:
+        path = os.path.join(Config.SCRIPTS_DIR, script_id, "meta.json")
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return None
 
 
 async def _lm_list(message: Message):
@@ -524,7 +541,12 @@ async def _lm_list(message: Message):
     text += "<b>Загружены:</b>\n"
     if loaded:
         for sid in loaded:
-            text += f"  ✅ <code>{sid}</code>\n"
+            meta = _read_meta(sid)
+            cmd_str = meta.get("command", "") if meta else ""
+            if cmd_str:
+                text += f"  ✅ <code>{sid}</code> — <code>{cmd_str}</code>\n"
+            else:
+                text += f"  ✅ <code>{sid}</code>\n"
     else:
         text += "  <i>Нет</i>\n"
 
@@ -532,7 +554,12 @@ async def _lm_list(message: Message):
     text += "\n<b>Доступны:</b>\n"
     if not_loaded:
         for sid in not_loaded:
-            text += f"  ⬜ <code>{sid}</code>\n"
+            meta = _read_meta(sid)
+            cmd_str = meta.get("command", "") if meta else ""
+            if cmd_str:
+                text += f"  ⬜ <code>{sid}</code> — <code>{cmd_str}</code>\n"
+            else:
+                text += f"  ⬜ <code>{sid}</code>\n"
     else:
         text += "  <i>Все загружены</i>\n"
 
@@ -607,6 +634,13 @@ async def _lm_info(message: Message, script_id: str):
         text += f"\n<b>Аддоны:</b>\n"
         for addon in info["addons"]:
             text += f"  📎 {addon}\n"
+
+    # Read meta.json for commands
+    meta = _read_meta(script_id)
+    if meta and meta.get("commands"):
+        text += "\n<b>Команды:</b>\n"
+        for c in meta["commands"]:
+            text += f"  ⚡ <code>{c}</code>\n"
 
     await safe_edit(message, text, parse_mode=ParseMode.HTML)
 
@@ -685,11 +719,11 @@ async def main():
     )
 
     # Register built-in commands
-    client.add_handler(MessageHandler(rn_cmd, cmd("rn")))
-    client.add_handler(MessageHandler(mm_cmd, cmd("mm")))
+    client.add_handler(MessageHandler(rn_cmd, cmd("рн")))
+    client.add_handler(MessageHandler(mm_cmd, cmd("меню")))
     client.add_handler(CallbackQueryHandler(mm_cb, filters.regex(r"^mm_")))
-    client.add_handler(MessageHandler(mf_cmd, cmd("mf") & filters.reply))
-    client.add_handler(MessageHandler(lm_cmd, cmd("lm")))
+    client.add_handler(MessageHandler(mf_cmd, cmd("мф") & filters.reply))
+    client.add_handler(MessageHandler(lm_cmd, cmd("лм")))
 
     # Load all scripts
     _loaded_scripts = load_all_scripts(client)
