@@ -86,13 +86,13 @@ async def _cmd_help(client, message) -> None:
 
     text = (
         "<b>\u2728 Премиум эмоджи</b>\n\n"
-        "<code>-прем собрать</code> \u2014 ответ на сообщение, извлечь все ID\n"
-        "<code>-прем сохранить <name></code> \u2014 ответ на эмоджи, сохранить\n"
-        "<code>-прем список</code> \u2014 показать сохранённые\n"
-        "<code>-прем удалить <name></code> \u2014 удалить сохранённый\n"
-        "<code>-прем отправить <name></code> \u2014 отправить в чат\n"
-        "<code>-прем id <custom_emoji_id></code> \u2014 отправить по ID\n"
-        "<code>-прем сообщение текст :имя: текст</code> \u2014 сообщение с эмоджи\n"
+        "<code>-прем сб</code> \u2014 извлечь ID (ответ на сообщение)\n"
+        "<code>-прем сох <name></code> \u2014 сохранить эмоджи\n"
+        "<code>-прем сп</code> \u2014 список сохранённых\n"
+        "<code>-прем уд <name></code> \u2014 удалить\n"
+        "<code>-прем от <name></code> \u2014 отправить\n"
+        "<code>-прем id <ID></code> \u2014 отправить по ID\n"
+        "<code>-прем соо текст :имя: текст</code> \u2014 сообщение с эмоджи\n"
     )
     from scripts._utils import safe_edit
     await safe_edit(message, text, parse_mode=ParseMode.HTML)
@@ -526,19 +526,19 @@ def register(client):
         sub = parts[1] if len(parts) > 1 else ""
 
         try:
-            if sub in ("собрать", "grab", "extract", "ids"):
+            if sub in ("сб", "собрать", "grab", "extract", "ids"):
                 await _cmd_grab(client, message)
-            elif sub in ("сохранить", "save", "add", "+"):
+            elif sub in ("сох", "сохранить", "save", "add", "+"):
                 await _cmd_save(client, message)
-            elif sub in ("список", "list", "ls", "all"):
+            elif sub in ("сп", "список", "list", "ls", "all"):
                 await _cmd_list(client, message)
-            elif sub in ("удалить", "del", "rm", "remove", "-"):
+            elif sub in ("уд", "удалить", "del", "rm", "remove", "-"):
                 await _cmd_del(client, message)
-            elif sub in ("отправить", "use", "send", "show"):
+            elif sub in ("от", "отправить", "use", "send", "show"):
                 await _cmd_use(client, message)
             elif sub in ("id", "ids"):
                 await _cmd_send_id(client, message)
-            elif sub in ("сообщение", "msg", "text", "write"):
+            elif sub in ("соо", "сообщение", "msg", "text", "write"):
                 await _cmd_msg(client, message)
             else:
                 await _cmd_help(client, message)

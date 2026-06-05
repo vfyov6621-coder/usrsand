@@ -262,18 +262,18 @@ async def _cmd_help(message) -> None:
 
     text = (
         "<b>\ud83c\udfb5 Яндекс Музыка</b>\n\n"
-        "<code>-ям поиск</code> <i>запрос</i> \u2014 поиск треков\n"
-        "<code>-ям скачать</code> <i>id</i> \u2014 скачать/отправить трек\n"
-        "<code>-ям текст</code> <i>id</i> \u2014 текст песни\n"
-        "<code>-ям артист</code> <i>запрос</i> \u2014 поиск исполнителя\n"
-        "<code>-ям альбом</code> <i>запрос</i> \u2014 поиск альбома\n"
-        "<code>-ям любимые</code> \u2014 любимые треки\n"
-        "<code>-ям чарт</code> \u2014 чарт\n"
-        "<code>-ям сейчас</code> \u2014 что сейчас играет\n"
-        "<code>-ям бар</code> \u2014 стиль прогресс-бара\n"
-        "<code>-ям оверлей</code> \u2014 надписи на обложке\n"
-        "<code>-ям дебаг</code> \u2014 диагностика API\n"
-        "<code>-ям токен</code> <i>токен</i> \u2014 установить токен\n\n"
+        "<code>-ям п</code> <i>запрос</i> \u2014 поиск треков\n"
+        "<code>-ям с</code> <i>id</i> \u2014 скачать/отправить трек\n"
+        "<code>-ям т</code> <i>id</i> \u2014 текст песни\n"
+        "<code>-ям ар</code> <i>запрос</i> \u2014 поиск исполнителя\n"
+        "<code>-ям ал</code> <i>запрос</i> \u2014 поиск альбома\n"
+        "<code>-ям лю</code> \u2014 любимые треки\n"
+        "<code>-ям ч</code> \u2014 чарт\n"
+        "<code>-ям се</code> \u2014 что сейчас играет\n"
+        "<code>-ям б</code> \u2014 стиль прогресс-бара\n"
+        "<code>-ям ов</code> \u2014 надписи на обложке\n"
+        "<code>-ям дб</code> \u2014 диагностика API\n"
+        "<code>-ям тк</code> <i>токен</i> \u2014 установить токен\n\n"
         "<i>Получить токен: </i>"
         '<a href="https://oauth.yandex.ru/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d">'
         "OAuth авторизация</a>"
@@ -1923,29 +1923,29 @@ def register(client):
         sub = parts[1] if len(parts) > 1 else ""
 
         try:
-            if sub in ("поиск", "s", "search"):
+            if sub in ("п", "поиск", "s", "search"):
                 await _cmd_search(client, message)
-            elif sub in ("скачать", "d", "dl", "download"):
+            elif sub in ("с", "скачать", "d", "dl", "download"):
                 await _cmd_download(client, message)
-            elif sub in ("текст", "l", "lyrics", "lyric"):
+            elif sub in ("т", "текст", "l", "lyrics", "lyric"):
                 await _cmd_lyrics(message)
-            elif sub in ("артист", "a", "artist"):
+            elif sub in ("ар", "артист", "a", "artist"):
                 await _cmd_artist(client, message)
-            elif sub in ("альбом", "b", "album"):
+            elif sub in ("ал", "альбом", "b", "album"):
                 await _cmd_album(client, message)
-            elif sub in ("любимые", "liked", "likes", "like"):
+            elif sub in ("лю", "любимые", "liked", "likes", "like"):
                 await _cmd_liked(client, message)
-            elif sub in ("чарт", "chart", "top"):
+            elif sub in ("ч", "чарт", "chart", "top"):
                 await _cmd_chart(client, message)
-            elif sub in ("сейчас", "now", "np", "playing"):
+            elif sub in ("се", "сейчас", "now", "np", "playing"):
                 await _cmd_now(client, message)
-            elif sub in ("бар", "bar", "bars", "progressbar"):
+            elif sub in ("б", "бар", "bar", "bars", "progressbar"):
                 await _cmd_bar(client, message)
-            elif sub in ("оверлей", "overlay", "style", "cover"):
+            elif sub in ("ов", "оверлей", "overlay", "style", "cover"):
                 await _cmd_overlay(client, message)
-            elif sub in ("дебаг", "debug"):
+            elif sub in ("дб", "дебаг", "debug"):
                 await _cmd_debug(message)
-            elif sub in ("токен", "token"):
+            elif sub in ("тк", "токен", "token"):
                 await _cmd_token(message)
             else:
                 await _cmd_help(message)

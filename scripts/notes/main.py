@@ -40,17 +40,26 @@ def register(client):
             if len(args) < 2:
                 await safe_edit(message,
                     "<b>📝 Заметки</b>\n\n"
-                    "<code>-заметка сохранить &lt;имя&gt; &lt;текст&gt;</code>\n"
-                    "<code>-заметка установить &lt;имя&gt;</code> (ответ на соо)\n"
-                    "<code>-заметка получить &lt;имя&gt;</code>\n"
-                    "<code>-заметка список</code>\n"
-                    "<code>-заметка удалить &lt;имя&gt;</code>\n\n"
+                    "<code>-заметка сох &lt;имя&gt; &lt;текст&gt;</code>\n"
+                    "<code>-заметка уст &lt;имя&gt;</code> (ответ на соо)\n"
+                    "<code>-заметка пол &lt;имя&gt;</code>\n"
+                    "<code>-заметка сп</code>\n"
+                    "<code>-заметка уд &lt;имя&gt;</code>\n\n"
                     "<code>-з &lt;имя&gt;</code> — быстрый вызов",
                     parse_mode=ParseMode.HTML,
                 )
                 return
 
             action = args[1].lower()
+
+            if action == "сп":
+                notes = _load()
+                if not notes:
+                    await safe_edit(message, "📝 Заметок нет.\n\n<code>-заметка сох имя текст</code>", parse_mode=ParseMode.HTML)
+                    return
+                lines = "\n".join(f"  {i}. <code>{k}</code>" for i, k in enumerate(sorted(notes.keys()), 1))
+                await safe_edit(message, f"📝 <b>Заметки ({len(notes)}):</b>\n\n{lines}", parse_mode=ParseMode.HTML)
+                return
 
             if action == "список":
                 notes = _load()
@@ -61,7 +70,7 @@ def register(client):
                 await safe_edit(message, f"📝 <b>Заметки ({len(notes)}):</b>\n\n{lines}", parse_mode=ParseMode.HTML)
                 return
 
-            if action == "удалить":
+            if action == "уд":
                 if len(args) < 3:
                     await safe_edit(message, "❌ <code>-заметка удалить &lt;имя&gt;</code>", parse_mode=ParseMode.HTML)
                     return
@@ -75,7 +84,7 @@ def register(client):
                     await safe_edit(message, f"❌ Заметка <b>{name}</b> не найдена", parse_mode=ParseMode.HTML)
                 return
 
-            if action == "получить":
+            if action == "пол":
                 if len(args) < 3:
                     await safe_edit(message, "❌ <code>-заметка получить &lt;имя&gt;</code>", parse_mode=ParseMode.HTML)
                     return
@@ -87,7 +96,7 @@ def register(client):
                     await safe_edit(message, f"❌ Заметка <b>{name}</b> не найдена", parse_mode=ParseMode.HTML)
                 return
 
-            if action == "установить":
+            if action == "уст":
                 if len(args) < 3:
                     await safe_edit(message, "❌ <code>-заметка установить &lt;имя&gt;</code> (ответ на соо)", parse_mode=ParseMode.HTML)
                     return
@@ -106,7 +115,7 @@ def register(client):
                 await safe_edit(message, f"✅ Заметка <b>{name}</b> сохранена", parse_mode=ParseMode.HTML)
                 return
 
-            if action == "сохранить":
+            if action == "сох":
                 if len(args) < 3:
                     await safe_edit(message, "❌ <code>-заметка сохранить &lt;имя&gt; &lt;текст&gt;</code>", parse_mode=ParseMode.HTML)
                     return

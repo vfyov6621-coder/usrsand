@@ -397,15 +397,15 @@ async def _cmd_help(client, message) -> None:
     text = (
         "<b>\U0001f528 Админ-инструменты</b>\n\n"
         "\U0001f534 <b>В группе</b> (требуются права админа):\n"
-        "<code>-админ бан [причина]</code> \u2014 забанить (ответ на сообщение)\n"
-        "<code>-админ разбан @user / ID</code> \u2014 разбанить\n"
-        "<code>-админ кик [причина]</code> \u2014 кикнуть (бан + разбан)\n"
-        "<code>-админ мут [2h / 30m / 1d]</code> \u2014 замьютить\n"
-        "<code>-админ размут</code> \u2014 размьютить (ответ на сообщение)\n\n"
+        "<code>-админ б [причина]</code> \u2014 забанить (ответ на сообщение)\n"
+        "<code>-админ рб @user / ID</code> \u2014 разбанить\n"
+        "<code>-админ к [причина]</code> \u2014 кикнуть (бан + разбан)\n"
+        "<code>-админ м [2h / 30m / 1d]</code> \u2014 замьютить\n"
+        "<code>-админ рм</code> \u2014 размьютить (ответ на сообщение)\n\n"
         "\U0001f535 <b>В ЛС:</b>\n"
-        "<code>-админ блок</code> \u2014 заблокировать пользователя\n"
-        "<code>-админ разблок</code> \u2014 разблокировать\n\n"
-        "<i>В группе -админ блок/-админ разблок работают через ответ или @username</i>"
+        "<code>-админ бл</code> \u2014 заблокировать пользователя\n"
+        "<code>-админ рбл</code> \u2014 разблокировать\n\n"
+        "<i>В группе -админ бл/-админ рбл работают через ответ или @username</i>"
     )
     await safe_edit(message, text, parse_mode=ParseMode.HTML)
 
@@ -423,19 +423,19 @@ def register(client):
         sub = parts[1] if len(parts) > 1 else ""
 
         try:
-            if sub in ("бан",):
+            if sub in ("б", "бан",):
                 await _cmd_ban(client, message)
-            elif sub in ("разбан",):
+            elif sub in ("рб", "разбан",):
                 await _cmd_unban(client, message)
-            elif sub in ("кик",):
+            elif sub in ("к", "кик",):
                 await _cmd_kick(client, message)
-            elif sub in ("мут",):
+            elif sub in ("м", "мут",):
                 await _cmd_mute(client, message)
-            elif sub in ("размут",):
+            elif sub in ("рм", "размут",):
                 await _cmd_unmute(client, message)
-            elif sub in ("блок", "block"):
+            elif sub in ("бл", "блок", "block"):
                 await _cmd_block(client, message)
-            elif sub in ("разблок", "unblock"):
+            elif sub in ("рбл", "разблок", "unblock"):
                 await _cmd_unblock(client, message)
             else:
                 await _cmd_help(client, message)
