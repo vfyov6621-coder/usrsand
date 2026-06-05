@@ -135,8 +135,12 @@ def register(client):
                     parse_mode=ParseMode.HTML,
                 )
                 return
+            import asyncio
             try:
                 await message.delete()
+            except Exception:
+                pass
+            try:
                 if vtype == "round":
                     await client.send_video_note(
                         chat_id=message.chat.id,
@@ -148,10 +152,28 @@ def register(client):
                         voice=filepath,
                     )
             except Exception as e:
-                await message.reply_text(
-                    f"❌ Ошибка: {e}",
-                    parse_mode=ParseMode.HTML,
-                )
+                err_name = type(e).__name__
+                if "Slowmode" in err_name or "Flood" in err_name:
+                    await asyncio.sleep(getattr(e, "value", 2) or 2)
+                    try:
+                        if vtype == "round":
+                            await client.send_video_note(
+                                chat_id=message.chat.id,
+                                video_note=filepath,
+                            )
+                        else:
+                            await client.send_voice(
+                                chat_id=message.chat.id,
+                                voice=filepath,
+                            )
+                    except Exception:
+                        pass
+                else:
+                    await client.send_message(
+                        chat_id=message.chat.id,
+                        text=f"❌ Ошибка: {e}",
+                        parse_mode=ParseMode.HTML,
+                    )
             return
 
         # ── СОХРАНИТЬ ─────────────────────────────────────────────
