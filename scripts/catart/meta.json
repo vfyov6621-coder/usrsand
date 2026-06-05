@@ -1,8 +1,1 @@
-{
-  "name": "CatArt",
-  "version": "1.0",
-  "author": "sandusr",
-  "description": "ASCII-арт с котами",
-  "command": "-коты",
-  "commands": ["-коты [номер]", "-коты on/off"]
-}
+{"command": "-коты", "commands": ["-коты", "-коты номер", "-коты вкл", "-коты выкл"]}

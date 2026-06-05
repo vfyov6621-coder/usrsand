@@ -52,7 +52,7 @@ def register(client):
 
             action = args[1].lower()
 
-            if action in ("list", "список"):
+            if action == "список":
                 notes = _load()
                 if not notes:
                     await safe_edit(message, "📝 Заметок нет.\n\n<code>-заметка сохранить имя текст</code>", parse_mode=ParseMode.HTML)
@@ -61,7 +61,7 @@ def register(client):
                 await safe_edit(message, f"📝 <b>Заметки ({len(notes)}):</b>\n\n{lines}", parse_mode=ParseMode.HTML)
                 return
 
-            if action in ("del", "удалить"):
+            if action == "удалить":
                 if len(args) < 3:
                     await safe_edit(message, "❌ <code>-заметка удалить &lt;имя&gt;</code>", parse_mode=ParseMode.HTML)
                     return
@@ -75,7 +75,7 @@ def register(client):
                     await safe_edit(message, f"❌ Заметка <b>{name}</b> не найдена", parse_mode=ParseMode.HTML)
                 return
 
-            if action in ("get", "получить"):
+            if action == "получить":
                 if len(args) < 3:
                     await safe_edit(message, "❌ <code>-заметка получить &lt;имя&gt;</code>", parse_mode=ParseMode.HTML)
                     return
@@ -87,7 +87,7 @@ def register(client):
                     await safe_edit(message, f"❌ Заметка <b>{name}</b> не найдена", parse_mode=ParseMode.HTML)
                 return
 
-            if action in ("set", "установить"):
+            if action == "установить":
                 if len(args) < 3:
                     await safe_edit(message, "❌ <code>-заметка установить &lt;имя&gt;</code> (ответ на соо)", parse_mode=ParseMode.HTML)
                     return
@@ -106,7 +106,7 @@ def register(client):
                 await safe_edit(message, f"✅ Заметка <b>{name}</b> сохранена", parse_mode=ParseMode.HTML)
                 return
 
-            if action in ("save", "сохранить"):
+            if action == "сохранить":
                 if len(args) < 3:
                     await safe_edit(message, "❌ <code>-заметка сохранить &lt;имя&gt; &lt;текст&gt;</code>", parse_mode=ParseMode.HTML)
                     return

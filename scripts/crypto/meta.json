@@ -1,8 +1,1 @@
-{
-  "name": "Crypto",
-  "version": "1.0",
-  "author": "sandusr",
-  "description": "Бесполезный токен + курс к хлебу",
-  "command": "-крипто",
-  "commands": ["-крипто", "-крипто on/off"]
-}
+{"command": "-крипто", "commands": ["-крипто"]}

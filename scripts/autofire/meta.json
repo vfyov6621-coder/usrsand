@@ -1,8 +1,1 @@
-{
-  "name": "Autofire",
-  "version": "1.0",
-  "author": "sandusr",
-  "description": "Авто-реакция 🔥 на длинные сообщения",
-  "command": "-автоогонь",
-  "commands": ["-автоогонь on/off"]
-}
+{"command": "-автоогонь", "commands": ["-автоогонь вкл", "-автоогонь выкл"]}

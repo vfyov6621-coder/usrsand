@@ -1,8 +1,1 @@
-{
-  "name": "Subtitles",
-  "version": "1.0",
-  "author": "sandusr",
-  "description": "Голосовые → текст с кучей ошибок и смехом",
-  "command": "-субтитры",
-  "commands": ["-субтитры on/off"]
-}
+{"command": "-субтитры", "commands": ["-субтитры вкл", "-субтитры выкл"]}

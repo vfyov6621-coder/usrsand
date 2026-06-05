@@ -425,11 +425,11 @@ async def _handle_analyze(client, message: Message, args_raw: str):
             await safe_edit(
                 message,
                 "<b>Использование:</b>\n\n"
-                "<code>-ии analyze @username</code> — анализ (50 сообщений)\n"
-                "<code>-ии analyze @username 100</code> — анализ (100 сообщений)\n"
-                "<code>-ии analyze</code> (reply) — анализ автора сообщения\n"
-                "<code>-ии analyze reply</code> — анализ автора ответа\n\n"
-                "<code>-ии summary</code> — сводка по всему чату",
+                "<code>-ии анализ @username</code> — анализ (50 сообщений)\n"
+                "<code>-ии анализ @username 100</code> — анализ (100 сообщений)\n"
+                "<code>-ии анализ</code> (ответ) — анализ автора сообщения\n"
+                "<code>-ии анализ ответ</code> — анализ автора ответа\n\n"
+                "<code>-ии сводка</code> — сводка по всему чату",
                 parse_mode=ParseMode.HTML,
             )
             return
@@ -586,42 +586,42 @@ def register(client):
             action_word = action_lower.split()[0] if action_lower else ""
             action_rest = action[len(action_word):].strip() if action_word else ""
 
-            # -ии on
-            if action_word == "on":
+            # -ии вкл
+            if action_word in ("вкл", "on"):
                 _chat_enabled = True
                 _load_history()
                 await safe_edit(
                     message,
-                    "🟢 <b>AI режим включён</b>\n\n"
+                    "\U0001f7e2 <b>AI режим включён</b>\n\n"
                     f"Модель: <code>{model}</code>\n"
                     "Теперь я отвечу на все твои сообщения.\n\n"
-                    "<code>-ии off</code> — выключить\n"
-                    "<code>-ии clear</code> — очистить историю",
+                    "<code>-ии выкл</code> — выключить\n"
+                    "<code>-ии очистить</code> — очистить историю",
                     parse_mode=ParseMode.HTML,
                 )
                 return
 
-            # -ии off
-            if action_word == "off":
+            # -ии выкл
+            if action_word in ("выкл", "off"):
                 _chat_enabled = False
-                await safe_edit(message, "🔴 AI режим выключен", parse_mode=ParseMode.HTML)
+                await safe_edit(message, "\U0001f534 AI режим выключен", parse_mode=ParseMode.HTML)
                 return
 
-            # -ии clear
-            if action_word == "clear":
+            # -ии очистить
+            if action_word in ("очистить", "clear"):
                 _conversation_history = []
                 _save_history()
-                await safe_edit(message, "🗑 История диалога очищена", parse_mode=ParseMode.HTML)
+                await safe_edit(message, "\U0001f5d1 История диалога очищена", parse_mode=ParseMode.HTML)
                 return
 
-            # -ии model
-            if action_word == "model":
+            # -ии модель
+            if action_word in ("модель", "model"):
                 new_model = action_rest.strip()
                 if not new_model:
                     await safe_edit(
                         message,
                         f"Текущая модель: <code>{model}</code>\n\n"
-                        "Сменить: <code>-ии model qwen2.5:3b</code>",
+                        "Сменить: <code>-ии модель qwen2.5:3b</code>",
                         parse_mode=ParseMode.HTML,
                     )
                     return
@@ -636,8 +636,8 @@ def register(client):
                 )
                 return
 
-            # -ии status
-            if action_word == "status":
+            # -ии статус
+            if action_word in ("статус", "status"):
                 available, models = await _check_ollama()
                 if available:
                     models_str = "\n".join(f"  • <code>{m}</code>" for m in models[:10])
@@ -661,14 +661,14 @@ def register(client):
                     )
                 return
 
-            # -ии sys
-            if action_word == "sys":
+            # -ии система
+            if action_word in ("система", "sys"):
                 new_sys = action_rest.strip()
                 if not new_sys:
                     await safe_edit(
                         message,
                         f"Текущий системный промпт:\n\n<i>{system}</i>\n\n"
-                        "Изменить: <code>-ии sys Ты весёлый бот</code>",
+                        "Изменить: <code>-ии система Ты весёлый бот</code>",
                         parse_mode=ParseMode.HTML,
                     )
                     return
@@ -682,13 +682,13 @@ def register(client):
                 )
                 return
 
-            # -ии analyze @username [N]
-            if action_word == "analyze":
+            # -ии анализ @username [N]
+            if action_word in ("анализ", "analyze"):
                 await _handle_analyze(client, message, action_rest)
                 return
 
-            # -ии summary [N]
-            if action_word == "summary":
+            # -ии сводка [N]
+            if action_word in ("сводка", "summary"):
                 await _handle_summary(client, message, action_rest)
                 return
 
@@ -698,18 +698,18 @@ def register(client):
                     message,
                     "<b>🤖 AI Chat — локальный ассистент</b>\n\n"
                     "<code>-ии &lt;любой вопрос&gt;</code> — спросить AI\n"
-                    "<code>-ии on/off</code> — режим диалога\n"
-                    "<code>-ии clear</code> — очистить историю\n"
-                    "<code>-ии model &lt;name&gt;</code> — сменить модель\n"
-                    "<code>-ии status</code> — статус Ollama\n"
-                    "<code>-ии sys &lt;текст&gt;</code> — характер AI\n\n"
+                    "<code>-ии вкл/выкл</code> — режим диалога\n"
+                    "<code>-ии очистить</code> — очистить историю\n"
+                    "<code>-ии модель &lt;name&gt;</code> — сменить модель\n"
+                    "<code>-ии статус</code> — статус Ollama\n"
+                    "<code>-ии система &lt;текст&gt;</code> — характер AI\n\n"
                     "<b>Анализ чата (можно писать по-русски):</b>\n"
                     "<code>-ии проанализируй @username</code>\n"
                     "<code>-ии проанализируй @username 500</code>\n"
                     "<code>-ии расскажи о @username</code>\n"
                     "<code>-ии кто такой @username</code>\n"
                     "<code>-ии опиши @username</code>\n"
-                    "<code>-ии проанализируй</code> (reply)\n"
+                    "<code>-ии проанализируй</code> (ответ)\n"
                     "<code>-ии сводка по чату</code>\n"
                     "<code>-ии что обсуждали</code>",
                     parse_mode=ParseMode.HTML,

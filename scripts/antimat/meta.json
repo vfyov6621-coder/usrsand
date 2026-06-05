@@ -1,8 +1,1 @@
-{
-  "name": "Antimat",
-  "version": "1.0",
-  "author": "sandusr",
-  "description": "Заменяет мат на звёздочки с нравоучением",
-  "command": "-антимат",
-  "commands": ["-антимат on/off"]
-}
+{"command": "-антимат", "commands": ["-антимат вкл", "-антимат выкл"]}

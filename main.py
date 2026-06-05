@@ -491,31 +491,19 @@ async def lm_cmd(client, message: Message):
     action = args[1].strip()
     add_log(f"-лм {action} from {message.from_user.id}" if message.from_user else f"-лм {action}")
 
-    if action == "list" or action == "список":
+    if action == "список":
         await _lm_list(message)
-    elif action.startswith("load ") or action.startswith("загрузить "):
-        if action.startswith("загрузить "):
-            sid = action[len("загрузить "):].strip()
-        else:
-            sid = action[5:].strip()
+    elif action.startswith("загрузить "):
+        sid = action[len("загрузить "):].strip()
         await _lm_load(client, message, sid)
-    elif action.startswith("unload ") or action.startswith("выгрузить "):
-        if action.startswith("выгрузить "):
-            sid = action[len("выгрузить "):].strip()
-        else:
-            sid = action[7:].strip()
+    elif action.startswith("выгрузить "):
+        sid = action[len("выгрузить "):].strip()
         await _lm_unload(message, sid)
-    elif action.startswith("reload ") or action.startswith("перезагрузить "):
-        if action.startswith("перезагрузить "):
-            sid = action[len("перезагрузить "):].strip()
-        else:
-            sid = action[7:].strip()
+    elif action.startswith("перезагрузить "):
+        sid = action[len("перезагрузить "):].strip()
         await _lm_reload(client, message, sid)
-    elif action.startswith("info ") or action.startswith("инфо "):
-        if action.startswith("инфо "):
-            sid = action[len("инфо "):].strip()
-        else:
-            sid = action[5:].strip()
+    elif action.startswith("инфо "):
+        sid = action[len("инфо "):].strip()
         await _lm_info(message, sid)
     else:
         await safe_edit(message, f"Неизвестная команда: <code>{action}</code>", parse_mode=ParseMode.HTML)

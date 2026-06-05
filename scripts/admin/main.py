@@ -423,15 +423,15 @@ def register(client):
         sub = parts[1] if len(parts) > 1 else ""
 
         try:
-            if sub in ("бан", "ban"):
+            if sub in ("бан",):
                 await _cmd_ban(client, message)
-            elif sub in ("разбан", "unban", "pardon"):
+            elif sub in ("разбан",):
                 await _cmd_unban(client, message)
-            elif sub in ("кик", "kick"):
+            elif sub in ("кик",):
                 await _cmd_kick(client, message)
-            elif sub in ("мут", "mute", "silence", "shh"):
+            elif sub in ("мут",):
                 await _cmd_mute(client, message)
-            elif sub in ("размут", "unmute", "unsilence", "talk"):
+            elif sub in ("размут",):
                 await _cmd_unmute(client, message)
             elif sub in ("блок", "block"):
                 await _cmd_block(client, message)
