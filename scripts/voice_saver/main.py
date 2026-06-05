@@ -15,13 +15,6 @@ DATA_FILE = os.path.join(
     "scripts_custom",
     "voices.json",
 )
-VOICES_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(BASE_DIR)),
-    "scripts_custom",
-    "voice_saver",
-)
-
-os.makedirs(VOICES_DIR, exist_ok=True)
 
 
 def _load() -> dict:
@@ -41,6 +34,7 @@ def _save(data: dict):
 
 
 def register(client):
+    import asyncio
     from pyrogram import filters
     from pyrogram.enums import ParseMode
     from pyrogram.types import Message
@@ -99,10 +93,6 @@ def register(client):
                     parse_mode=ParseMode.HTML,
                 )
                 return
-            # удалить файл
-            filepath = voices[name].get("file", "")
-            if filepath and os.path.exists(filepath):
-                os.remove(filepath)
             del voices[name]
             _save(voices)
             await message.edit_text(
@@ -127,29 +117,34 @@ def register(client):
                     parse_mode=ParseMode.HTML,
                 )
                 return
-            filepath = voices[name].get("file", "")
+
+            fid = voices[name].get("file_id", "")
             vtype = voices[name].get("type", "voice")
-            if not filepath or not os.path.exists(filepath):
+
+            if not fid:
                 await message.edit_text(
-                    f"❌ Файл <b>{name}</b> не найден (удалён с диска)",
+                    f"❌ file_id <b>{name}</b> отсутствует",
                     parse_mode=ParseMode.HTML,
                 )
                 return
-            import asyncio
+
+            # удалить команду
             try:
                 await message.delete()
             except Exception:
                 pass
+
+            # отправить
             try:
                 if vtype == "round":
                     await client.send_video_note(
                         chat_id=message.chat.id,
-                        video_note=filepath,
+                        video_note=fid,
                     )
                 else:
                     await client.send_voice(
                         chat_id=message.chat.id,
-                        voice=filepath,
+                        voice=fid,
                     )
             except Exception as e:
                 err_name = type(e).__name__
@@ -159,12 +154,12 @@ def register(client):
                         if vtype == "round":
                             await client.send_video_note(
                                 chat_id=message.chat.id,
-                                video_note=filepath,
+                                video_note=fid,
                             )
                         else:
                             await client.send_voice(
                                 chat_id=message.chat.id,
-                                voice=filepath,
+                                voice=fid,
                             )
                     except Exception:
                         pass
@@ -193,7 +188,7 @@ def register(client):
                 )
                 return
 
-            # определить тип: голосовое или кружок
+            # определить тип
             is_round = bool(reply.video_note)
             is_voice = bool(reply.voice)
 
@@ -204,46 +199,21 @@ def register(client):
                 )
                 return
 
-            await message.edit_text("🎤 Скачивание...", parse_mode=ParseMode.HTML)
+            # сохранить file_id (без скачивания файла)
+            file_id = reply.video_note.file_id if is_round else reply.voice.file_id
 
-            try:
-                file_id = reply.video_note.file_id if is_round else reply.voice.file_id
-                ext = ".ogg"
-                filename = f"{name}{ext}"
-                filepath = os.path.join(VOICES_DIR, filename)
+            voices = _load()
+            voices[name] = {
+                "file_id": file_id,
+                "type": "round" if is_round else "voice",
+            }
+            _save(voices)
 
-                # скачать файл
-                downloaded = await client.download_media(
-                    file_id,
-                    file_name=filepath,
-                )
-
-                if not downloaded:
-                    await message.edit_text(
-                        "❌ Не удалось скачать",
-                        parse_mode=ParseMode.HTML,
-                    )
-                    return
-
-                # сохранить метаданные
-                voices = _load()
-                voices[name] = {
-                    "file": downloaded,
-                    "type": "round" if is_round else "voice",
-                }
-                _save(voices)
-
-                kind = "кружок" if is_round else "голосовое"
-                await message.edit_text(
-                    f"✅ {kind} <b>{name}</b> сохранено!",
-                    parse_mode=ParseMode.HTML,
-                )
-
-            except Exception as e:
-                await message.edit_text(
-                    f"❌ Ошибка: {e}",
-                    parse_mode=ParseMode.HTML,
-                )
+            kind = "кружок" if is_round else "голосовое"
+            await message.edit_text(
+                f"✅ {kind} <b>{name}</b> сохранено!",
+                parse_mode=ParseMode.HTML,
+            )
             return
 
         # ── НЕИЗВЕСТНАЯ КОМАНДА ──────────────────────────────────
@@ -255,7 +225,6 @@ def register(client):
 
 def on_load():
     print("[VoiceSaver] Loaded. .гч с/о/сп/у")
-    os.makedirs(VOICES_DIR, exist_ok=True)
 
 
 def on_unload():
