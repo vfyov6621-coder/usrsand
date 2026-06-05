@@ -1,0 +1,9 @@
+{
+  "name": "Voice Saver",
+  "version": "1.0",
+  "author": "Zaya",
+  "description": "Сохранение и отправка голосовых сообщений",
+  "command": ".гч",
+  "addons": [],
+  "tabs": []
+}
