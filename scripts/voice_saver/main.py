@@ -138,9 +138,9 @@ def register(client):
             try:
                 await message.delete()
                 if vtype == "round":
-                    await client.send_voice_note(
+                    await client.send_video_note(
                         chat_id=message.chat.id,
-                        voice=filepath,
+                        video_note=filepath,
                     )
                 else:
                     await client.send_voice(
@@ -148,7 +148,7 @@ def register(client):
                         voice=filepath,
                     )
             except Exception as e:
-                await message.edit_text(
+                await message.reply_text(
                     f"❌ Ошибка: {e}",
                     parse_mode=ParseMode.HTML,
                 )
