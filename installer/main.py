@@ -392,6 +392,44 @@ class App:
         br.pack(fill="x", pady=(2, 0))
         self._btn(br, "  Установить  ", self._do_install, C["green"]).pack(side="left")
 
+        # прогрессбар
+        pb_card = self._card(f)
+        pb_card.pack_forget()  # скрыт до старта установки
+        self._progress_frame = pb_card
+
+        pbr = tk.Frame(pb_card, bg=C["card"])
+        pbr.pack(fill="x")
+        tk.Label(pbr, text="Прогресс:", bg=C["card"], fg=C["dim"],
+                 font=("Segoe UI", 10), anchor="w").pack(side="left")
+        self.lbl_pct = tk.Label(pbr, text="0%", bg=C["card"], fg=C["accent"],
+                                font=("Segoe UI", 10, "bold"), anchor="e", width=5)
+        self.lbl_pct.pack(side="right")
+
+        self._progress_bar = tk.Canvas(pb_card, height=20, bg=C["input"],
+                                        highlightthickness=0, bd=0)
+        self._progress_bar.pack(fill="x", pady=(6, 0))
+        self.lbl_step = tk.Label(pb_card, text="", bg=C["card"], fg=C["text"],
+                                 font=("Segoe UI", 9), anchor="w")
+        self.lbl_step.pack(anchor="w", pady=(4, 0))
+
+    def _set_progress(self, pct, text=""):
+        """Update progress bar from a thread (safe via root.after)."""
+        self.root.after(0, self._draw_progress, pct, text)
+
+    def _draw_progress(self, pct, text=""):
+        self.lbl_pct.configure(text=f"{pct}%")
+        self.lbl_step.configure(text=text)
+        cv = self._progress_bar
+        cv.delete("all")
+        w = cv.winfo_width() or 800
+        h = 20
+        # фон
+        cv.create_rectangle(0, 0, w, h, fill=C["input"], outline="")
+        # полоса
+        bar_w = max(int(w * pct / 100), 0)
+        if bar_w > 0:
+            cv.create_rectangle(0, 0, bar_w, h, fill=C["accent"], outline="")
+
     # ─── вкладка Обновления ──────────────────────────────────────
 
     def _build_updates(self):
@@ -514,40 +552,59 @@ class App:
 
     def _install(self):
         d = self.v_dir.get().strip()
+
+        # показать прогрессбар
+        self.root.after(0, self._progress_frame.pack, ("fill", "x", (0, 10)))
+        self._set_progress(0, "Подготовка...")
         self._msg("Начинаем установку...")
 
+        # ─── Этап 1: git clone/pull (0-40%) ───
         git_dir = os.path.join(d, ".git")
         if os.path.exists(git_dir):
+            self._set_progress(5, "Обновление репозитория (git pull)...")
             self._msg("Репо существует — git pull...")
             c, o, e = _run_git(d, "pull", "origin", "main")
             if c != 0:
                 self._msg(f"git pull ошибка: {e}")
+                self._set_progress(0, f"Ошибка: {e}")
                 return
+            self._set_progress(40, "Репозиторий обновлён")
         else:
+            self._set_progress(5, "Клонирование репозитория...")
             os.makedirs(d, exist_ok=True)
             self._msg(f"Клонирую в {d}...")
             c, o, e = _run_git(os.path.dirname(d.rstrip("/\\")), "clone", REPO_URL,
                                 os.path.basename(d.rstrip("/\\")))
             if c != 0:
                 self._msg(f"clone ошибка: {e}")
+                self._set_progress(0, f"Ошибка: {e}")
                 return
+            self._set_progress(40, "Репозиторий клонирован")
 
-        self._msg("Репозиторий готов")
-
+        # SHA
         c, sha, _ = _run_git(d, "rev-parse", "HEAD")
         if c == 0:
             self.current_sha = sha
             self.cfg.set("current_sha", sha)
 
+        # ─── Этап 2: pip install (40-70%) ───
+        self._set_progress(45, "Установка зависимостей (pip)...")
         req = os.path.join(d, "requirements.txt")
         if os.path.exists(req):
             self._msg("Установка зависимостей...")
+            self._set_progress(50, "pip install -r requirements.txt...")
             rc, err = _pip_install(req)
             if rc == 0:
                 self._msg("Зависимости установлены")
+                self._set_progress(70, "Зависимости установлены")
             else:
                 self._msg(f"pip: {err}")
+                self._set_progress(70, f"pip warning: {err[-60:]}")
+        else:
+            self._set_progress(70, "requirements.txt не найден, пропущено")
 
+        # ─── Этап 3: .env (70-80%) ───
+        self._set_progress(75, "Создание .env...")
         env = os.path.join(d, ".env")
         lines = [
             f"API_ID={self.v_api_id.get().strip()}",
@@ -560,9 +617,29 @@ class App:
         with open(env, "w", encoding="utf-8") as f:
             f.write("\n".join(lines) + "\n")
         self._msg(".env создан")
+        self._set_progress(80, ".env создан")
 
+        # ─── Этап 3.5: .session файл (80-85%) ───
+        self._set_progress(82, "Создание .session...")
+        session_str = self.v_session.get().strip()
+        if session_str:
+            # pyrogram хранит сессию как pickle-файл с именем из Client.name
+            # но мы можем создать файл-маркер чтобы пользователь знал
+            session_file = os.path.join(d, "userbot_session.session")
+            if not os.path.exists(session_file):
+                # Pyrogram сам создаст .session при первом подключении,
+                # но запишем SESSION_STRING в .env — этого достаточно
+                pass
+            self._set_progress(85, "SESSION_STRING сохранён в .env")
+        else:
+            self._set_progress(85, "Сессия не указана — будет создана при запуске")
+
+        # ─── Этап 4: ярлыки (85-95%) ───
+        self._set_progress(90, "Создание ярлыков...")
         self._shortcuts(d)
+        self._set_progress(95, "Ярлыки созданы")
 
+        # ─── Готово (100%) ───
         self.cfg.set("install_dir", d)
         self.cfg.set("api_id", self.v_api_id.get().strip())
         self.cfg.set("api_hash", self.v_api_hash.get().strip())
@@ -570,10 +647,11 @@ class App:
         self.cfg.set("installed_ver", "3.0")
         self.installed = True
 
+        self._set_progress(100, "Установка завершена!")
         self.root.after(0, lambda: self.lbl_status.configure(text="Установлена", fg=C["green"]))
         self.root.after(0, lambda: self.lbl_ver.configure(text=f"SHA: {self.current_sha[:7]}"))
         self._msg("Установка завершена!")
-        self.root.after(600, lambda: self._switch("updates"))
+        self.root.after(1200, lambda: self._switch("updates"))
 
     def _shortcuts(self, d):
         bat = f'@echo off\r\ncd /d "{d}"\r\ntitle Zaya UserBot\r\npython main.py\r\npause\r\n'
