@@ -347,24 +347,20 @@ class App:
         """Handle Ctrl+key — works with any keyboard layout."""
         w = event.widget
         ks = event.keysym.lower()
-        # латиница
-        if ks == "v":
-            w.event_generate("<<Paste>>")
-        elif ks == "c":
-            w.event_generate("<<Copy>>")
-        elif ks == "x":
-            w.event_generate("<<Cut>>")
-        elif ks == "a":
-            w.select_range(0, "end")
         # кириллица (русская раскладка: V=м, C=с, X=ч, A=ф)
-        elif ks == "м":
+        if ks == "м":
             w.event_generate("<<Paste>>")
+            return "break"
         elif ks == "с":
             w.event_generate("<<Copy>>")
+            return "break"
         elif ks == "ч":
             w.event_generate("<<Cut>>")
+            return "break"
         elif ks == "ф":
             w.select_range(0, "end")
+            return "break"
+        # латиница — встроенный обработчик Entry справляется сам
 
     def _browse(self, var):
         p = filedialog.askdirectory(initialdir=var.get())
