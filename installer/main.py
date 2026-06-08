@@ -340,16 +340,31 @@ class App:
         Works with both Latin and Cyrillic keyboard layouts.
         """
         widget.bind("<Button-1>", lambda e, w=widget: w.focus_set(), add="+")
+        # единый обработчик для обеих раскладок
+        widget.bind("<Control-Key>", self._ctrl_key_handler)
+
+    def _ctrl_key_handler(self, event):
+        """Handle Ctrl+key — works with any keyboard layout."""
+        w = event.widget
+        ks = event.keysym.lower()
         # латиница
-        widget.bind("<Control-v>", lambda e, w=widget: w.event_generate("<<Paste>>"))
-        widget.bind("<Control-c>", lambda e, w=widget: w.event_generate("<<Copy>>"))
-        widget.bind("<Control-x>", lambda e, w=widget: w.event_generate("<<Cut>>"))
-        widget.bind("<Control-a>", lambda e, w=widget: w.select_range(0, "end"))
-        # кириллица (русская раскладка Ctrl+М/С/Ч/Ф)
-        widget.bind("<Control-м>", lambda e, w=widget: w.event_generate("<<Paste>>"))
-        widget.bind("<Control-с>", lambda e, w=widget: w.event_generate("<<Copy>>"))
-        widget.bind("<Control-ч>", lambda e, w=widget: w.event_generate("<<Cut>>"))
-        widget.bind("<Control-ф>", lambda e, w=widget: w.select_range(0, "end"))
+        if ks == "v":
+            w.event_generate("<<Paste>>")
+        elif ks == "c":
+            w.event_generate("<<Copy>>")
+        elif ks == "x":
+            w.event_generate("<<Cut>>")
+        elif ks == "a":
+            w.select_range(0, "end")
+        # кириллица (русская раскладка: V=м, C=с, X=ч, A=ф)
+        elif ks == "м":
+            w.event_generate("<<Paste>>")
+        elif ks == "с":
+            w.event_generate("<<Copy>>")
+        elif ks == "ч":
+            w.event_generate("<<Cut>>")
+        elif ks == "ф":
+            w.select_range(0, "end")
 
     def _browse(self, var):
         p = filedialog.askdirectory(initialdir=var.get())
