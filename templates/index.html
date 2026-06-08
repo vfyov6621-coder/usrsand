@@ -3,270 +3,144 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>sandusr — Panel</title>
+    <title>Zaya UserBot — Panel</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-
-        :root {
-            --bg: #0a0a0f;
-            --bg2: #12121a;
-            --bg3: #1a1a2e;
-            --border: #2a2a3e;
-            --text: #e0e0e0;
-            --text2: #8888aa;
-            --accent: #7c3aed;
-            --accent2: #a855f7;
-            --green: #22c55e;
-            --red: #ef4444;
-            --yellow: #eab308;
-            --blue: #3b82f6;
-            --orange: #f97316;
+        *{margin:0;padding:0;box-sizing:border-box}
+        :root{
+            --bg:#1e1e2e;--surface:#282840;--card:#313150;--input:#2a2a48;
+            --text:#cdd6f4;--dim:#7f849c;--accent:#89b4fa;--accent2:#74c7ec;
+            --green:#a6e3a1;--red:#f38ba8;--orange:#fab387;--yellow:#f9e2af;
+            --border:#45475a;--radius:10px;
         }
-
-        body {
-            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-            background: var(--bg);
-            color: var(--text);
-            min-height: 100vh;
-        }
+        body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column}
 
         /* ── Header ── */
-        .header {
-            background: var(--bg2);
-            border-bottom: 1px solid var(--border);
-            padding: 16px 24px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            position: sticky;
-            top: 0;
-            z-index: 100;
-        }
-        .header-left { display: flex; align-items: center; gap: 12px; }
-        .logo {
-            width: 36px; height: 36px;
-            background: linear-gradient(135deg, var(--accent), var(--accent2));
-            border-radius: 10px;
-            display: flex; align-items: center; justify-content: center;
-            font-weight: 700; font-size: 16px; color: #fff;
-        }
-        .header h1 { font-size: 18px; font-weight: 600; }
-        .header h1 span { color: var(--accent2); }
-        .status-badge {
-            display: flex; align-items: center; gap: 8px;
-            padding: 6px 14px; border-radius: 20px;
-            font-size: 13px; font-weight: 500;
-        }
-        .status-badge.online { background: rgba(34,197,94,0.15); color: var(--green); }
-        .status-badge.offline { background: rgba(239,68,68,0.15); color: var(--red); }
-        .status-dot {
-            width: 8px; height: 8px; border-radius: 50%;
-            animation: pulse 2s infinite;
-        }
-        .online .status-dot { background: var(--green); }
-        .offline .status-dot { background: var(--red); animation: none; }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.4; }
-        }
+        .header{background:var(--surface);border-bottom:1px solid var(--border);padding:0 28px;height:56px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+        .header-left{display:flex;align-items:center;gap:14px}
+        .logo{width:32px;height:32px;background:var(--accent);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;color:var(--bg)}
+        .header h1{font-size:16px;font-weight:600}
+        .header h1 b{color:var(--accent)}
+        .header-right{display:flex;align-items:center;gap:12px}
+        .status-pill{display:flex;align-items:center;gap:7px;padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600}
+        .status-pill.online{background:rgba(166,227,161,.12);color:var(--green)}
+        .status-pill.offline{background:rgba(243,139,168,.12);color:var(--red)}
+        .dot{width:7px;height:7px;border-radius:50%}
+        .online .dot{background:var(--green);animation:pulse 2s infinite}
+        .offline .dot{background:var(--red)}
+        @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+        .ver{font-size:11px;color:var(--dim);font-family:monospace}
 
         /* ── Layout ── */
-        .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-        .full { grid-column: 1 / -1; }
+        .app{display:flex;flex:1;overflow:hidden}
+        .sidebar{width:220px;background:var(--surface);border-right:1px solid var(--border);padding:16px 0;flex-shrink:0;display:flex;flex-direction:column;gap:2px}
+        .main{flex:1;overflow-y:auto;padding:28px}
+        .main::-webkit-scrollbar{width:6px}
+        .main::-webkit-scrollbar-track{background:transparent}
+        .main::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+
+        /* ── Sidebar nav ── */
+        .nav-item{display:flex;align-items:center;gap:10px;padding:10px 20px;cursor:pointer;font-size:13px;font-weight:500;color:var(--dim);transition:all .15s;border-left:3px solid transparent;user-select:none}
+        .nav-item:hover{color:var(--text);background:rgba(255,255,255,.03)}
+        .nav-item.active{color:var(--accent);background:rgba(137,180,250,.08);border-left-color:var(--accent)}
+        .nav-icon{width:20px;text-align:center;font-size:14px}
+        .nav-section{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);padding:16px 20px 6px;opacity:.6}
+
+        /* ── Tab content ── */
+        .tab{display:none}
+        .tab.active{display:block}
+
+        /* ── Stats row ── */
+        .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px}
+        .stat{background:var(--card);border-radius:var(--radius);padding:18px 20px}
+        .stat-label{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+        .stat-val{font-size:26px;font-weight:700}
+        .c-green{color:var(--green)}.c-accent{color:var(--accent)}.c-orange{color:var(--orange)}.c-yellow{color:var(--yellow)}
 
         /* ── Cards ── */
-        .card {
-            background: var(--bg2);
-            border: 1px solid var(--border);
-            border-radius: 14px;
-            overflow: hidden;
-        }
-        .card-header {
-            padding: 14px 18px;
-            border-bottom: 1px solid var(--border);
-            display: flex; align-items: center; justify-content: space-between;
-        }
-        .card-header h2 { font-size: 14px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; }
-        .card-body { padding: 16px 18px; }
-
-        /* ── Stats ── */
-        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
-        .stat {
-            background: var(--bg3);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 18px;
-        }
-        .stat-label { font-size: 12px; color: var(--text2); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
-        .stat-value { font-size: 24px; font-weight: 700; }
-        .stat-value.green { color: var(--green); }
-        .stat-value.purple { color: var(--accent2); }
-        .stat-value.blue { color: var(--blue); }
-        .stat-value.yellow { color: var(--yellow); }
-
-        /* ── Scripts ── */
-        .script-item {
-            display: flex; align-items: center; justify-content: space-between;
-            padding: 14px 0;
-            border-bottom: 1px solid var(--border);
-        }
-        .script-item:last-child { border-bottom: none; }
-        .script-info { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
-        .script-icon {
-            width: 38px; height: 38px;
-            border-radius: 10px;
-            display: flex; align-items: center; justify-content: center;
-            font-size: 18px;
-            flex-shrink: 0;
-        }
-        .script-name { font-weight: 600; font-size: 14px; }
-        .script-desc { font-size: 12px; color: var(--text2); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .script-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-
-        .script-tag {
-            display: inline-block;
-            font-size: 11px;
-            padding: 2px 8px;
-            border-radius: 4px;
-        }
-        .tag-loaded { background: rgba(34,197,94,0.15); color: var(--green); }
-        .tag-unloaded { background: rgba(239,68,68,0.15); color: var(--red); }
-        .tag-lines { background: rgba(59,130,246,0.15); color: var(--blue); }
-        .tag-addon { background: rgba(234,179,8,0.15); color: var(--yellow); }
-
-        /* ── Buttons ── */
-        .btn {
-            padding: 5px 12px;
-            border: 1px solid var(--border);
-            border-radius: 7px;
-            background: var(--bg3);
-            color: var(--text);
-            font-size: 12px;
-            cursor: pointer;
-            transition: all 0.15s;
-            white-space: nowrap;
-            font-family: inherit;
-        }
-        .btn:hover { background: var(--border); }
-        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
-        .btn-load { border-color: rgba(34,197,94,0.3); color: var(--green); }
-        .btn-load:hover:not(:disabled) { background: rgba(34,197,94,0.15); }
-        .btn-unload { border-color: rgba(239,68,68,0.3); color: var(--red); }
-        .btn-unload:hover:not(:disabled) { background: rgba(239,68,68,0.15); }
-        .btn-reload { border-color: rgba(249,115,22,0.3); color: var(--orange); }
-        .btn-reload:hover:not(:disabled) { background: rgba(249,115,22,0.15); }
-
-        /* ── Toggle switch ── */
-        .toggle-wrap {
-            display: flex; align-items: center; gap: 6px;
-            cursor: pointer; user-select: none;
-        }
-        .toggle-label { font-size: 10px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.3px; }
-        .toggle {
-            position: relative;
-            width: 32px; height: 18px;
-            background: var(--border);
-            border-radius: 9px;
-            transition: background 0.2s;
-            flex-shrink: 0;
-        }
-        .toggle.active { background: var(--accent); }
-        .toggle::after {
-            content: '';
-            position: absolute;
-            top: 2px; left: 2px;
-            width: 14px; height: 14px;
-            background: #fff;
-            border-radius: 50%;
-            transition: transform 0.2s;
-        }
-        .toggle.active::after { transform: translateX(14px); }
-
-        /* ── Logs ── */
-        .log-container {
-            height: 340px;
-            overflow-y: auto;
-            font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
-            font-size: 12px;
-            line-height: 1.7;
-        }
-        .log-container::-webkit-scrollbar { width: 6px; }
-        .log-container::-webkit-scrollbar-track { background: var(--bg); }
-        .log-container::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-        .log-line { display: flex; gap: 10px; padding: 2px 0; }
-        .log-time { color: var(--text2); min-width: 70px; }
-        .log-level { min-width: 50px; font-weight: 600; }
-        .log-level.INFO { color: var(--blue); }
-        .log-level.WARNING { color: var(--yellow); }
-        .log-level.ERROR { color: var(--red); }
-        .log-msg { color: var(--text); }
-
-        /* ── Commands ── */
-        .cmd-row {
-            display: flex; align-items: center; gap: 14px;
-            padding: 10px 0;
-            border-bottom: 1px solid var(--border);
-        }
-        .cmd-row:last-child { border-bottom: none; }
-        .cmd-name {
-            font-family: 'Cascadia Code', 'Fira Code', monospace;
-            font-size: 13px; color: var(--accent2);
-            background: rgba(168,85,247,0.1);
-            padding: 4px 12px; border-radius: 6px;
-            min-width: 200px;
-            white-space: nowrap;
-        }
-        .cmd-desc { font-size: 13px; color: var(--text2); }
+        .card{background:var(--card);border-radius:var(--radius);overflow:hidden}
+        .card-h{padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+        .card-h h2{font-size:13px;font-weight:600;color:var(--dim);text-transform:uppercase;letter-spacing:.5px}
+        .card-h .badge{font-size:11px;color:var(--dim);font-family:monospace}
+        .card-b{padding:16px 20px}
+        .card+.card{margin-top:16px}
 
         /* ── Account ── */
-        .account-card {
-            display: flex; align-items: center; gap: 16px;
-            padding: 20px;
-        }
-        .account-avatar {
-            width: 56px; height: 56px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, var(--accent), var(--accent2));
-            display: flex; align-items: center; justify-content: center;
-            font-size: 24px;
-        }
-        .account-name { font-size: 18px; font-weight: 600; }
-        .account-detail { font-size: 13px; color: var(--text2); margin-top: 3px; }
-        .uptime-bar {
-            margin-top: 16px;
-            display: flex; align-items: center; gap: 10px;
-        }
-        .uptime-label { font-size: 12px; color: var(--text2); }
-        .uptime-value { font-family: monospace; font-size: 14px; color: var(--green); font-weight: 600; }
+        .acct{display:flex;align-items:center;gap:16px}
+        .acct-avatar{width:52px;height:52px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0}
+        .acct-name{font-size:18px;font-weight:600}
+        .acct-sub{font-size:12px;color:var(--dim);margin-top:2px}
+        .acct-row{display:flex;align-items:center;gap:10px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)}
+        .acct-row label{font-size:12px;color:var(--dim)}
+        .acct-row span{font-size:14px;font-weight:600;font-family:monospace;color:var(--green)}
 
-        /* ── Toast notification ── */
-        .toast {
-            position: fixed;
-            bottom: 24px; right: 24px;
-            padding: 12px 20px;
-            border-radius: 10px;
-            font-size: 13px;
-            z-index: 9999;
-            opacity: 0;
-            transform: translateY(20px);
-            transition: all 0.3s;
-            pointer-events: none;
-        }
-        .toast.show { opacity: 1; transform: translateY(0); }
-        .toast-success { background: rgba(34,197,94,0.9); color: #fff; }
-        .toast-error { background: rgba(239,68,68,0.9); color: #fff; }
+        /* ── Script items ── */
+        .scr-item{display:flex;align-items:center;justify-content:space-between;padding:14px 0;border-bottom:1px solid var(--border);gap:12px}
+        .scr-item:last-child{border-bottom:none}
+        .scr-info{display:flex;align-items:center;gap:12px;flex:1;min-width:0}
+        .scr-icon{width:36px;height:36px;border-radius:8px;background:var(--input);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+        .scr-name{font-weight:600;font-size:13px}
+        .scr-desc{font-size:11px;color:var(--dim);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .scr-right{display:flex;align-items:center;gap:8px;flex-shrink:0;flex-wrap:wrap}
+        .tag{font-size:10px;padding:2px 8px;border-radius:4px;font-weight:600}
+        .t-on{background:rgba(166,227,161,.12);color:var(--green)}
+        .t-off{background:rgba(243,139,168,.1);color:var(--red)}
+        .t-lines{background:rgba(137,180,250,.1);color:var(--accent)}
+        .t-addon{background:rgba(249,226,175,.1);color:var(--yellow)}
+        .t-cmd{background:var(--input);color:var(--dim);font-family:monospace}
+
+        /* ── Buttons ── */
+        .btn{padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--text);font-size:11px;cursor:pointer;transition:all .15s;font-family:inherit;white-space:nowrap}
+        .btn:hover{background:var(--input)}
+        .btn:disabled{opacity:.35;cursor:not-allowed}
+        .btn-g{border-color:rgba(166,227,161,.3);color:var(--green)}
+        .btn-g:hover:not(:disabled){background:rgba(166,227,161,.1)}
+        .btn-r{border-color:rgba(243,139,168,.3);color:var(--red)}
+        .btn-r:hover:not(:disabled){background:rgba(243,139,168,.1)}
+        .btn-o{border-color:rgba(250,179,135,.3);color:var(--orange)}
+        .btn-o:hover:not(:disabled){background:rgba(250,179,135,.1)}
+
+        /* ── Toggle ── */
+        .toggle-wrap{display:flex;align-items:center;gap:5px;cursor:pointer;user-select:none}
+        .toggle-lbl{font-size:9px;color:var(--dim);text-transform:uppercase;letter-spacing:.3px}
+        .toggle{position:relative;width:30px;height:16px;background:var(--border);border-radius:8px;transition:background .2s;flex-shrink:0}
+        .toggle.on{background:var(--accent)}
+        .toggle::after{content:'';position:absolute;top:2px;left:2px;width:12px;height:12px;background:#fff;border-radius:50%;transition:transform .2s}
+        .toggle.on::after{transform:translateX(14px)}
+
+        /* ── Logs ── */
+        .log-box{height:calc(100vh - 180px);min-height:400px;overflow-y:auto;font-family:'Cascadia Code','Fira Code','Consolas',monospace;font-size:11.5px;line-height:1.8}
+        .log-box::-webkit-scrollbar{width:5px}
+        .log-box::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+        .log-line{display:flex;gap:10px;padding:1px 0}
+        .log-time{color:var(--dim);min-width:66px}
+        .log-lvl{min-width:55px;font-weight:600}
+        .log-lvl.INFO{color:var(--accent)}.log-lvl.WARNING{color:var(--yellow)}.log-lvl.ERROR{color:var(--red)}
+        .log-msg{color:var(--text);word-break:break-word}
+
+        /* ── Commands ── */
+        .cmd-row{display:flex;align-items:center;gap:14px;padding:10px 0;border-bottom:1px solid var(--border)}
+        .cmd-row:last-child{border-bottom:none}
+        .cmd-code{font-family:'Cascadia Code','Fira Code',monospace;font-size:12px;color:var(--accent);background:var(--input);padding:4px 12px;border-radius:6px;white-space:nowrap}
+        .cmd-desc{font-size:12px;color:var(--dim)}
+
+        /* ── Toast ── */
+        .toast{position:fixed;bottom:20px;right:20px;padding:10px 18px;border-radius:8px;font-size:12px;font-weight:600;z-index:9999;opacity:0;transform:translateY(16px);transition:all .25s;pointer-events:none}
+        .toast.show{opacity:1;transform:translateY(0)}
+        .toast-ok{background:var(--green);color:var(--bg)}
+        .toast-err{background:var(--red);color:#fff}
 
         /* ── Responsive ── */
-        @media (max-width: 900px) {
-            .script-item { flex-direction: column; align-items: flex-start; gap: 10px; }
-            .script-right { width: 100%; flex-wrap: wrap; }
+        @media(max-width:900px){
+            .sidebar{width:56px;padding:16px 0}
+            .nav-item{padding:10px 0;justify-content:center;gap:0}
+            .nav-item span,.nav-section{display:none}
+            .nav-icon{width:auto;text-align:center}
+            .stats{grid-template-columns:repeat(2,1fr)}
         }
-        @media (max-width: 768px) {
-            .grid { grid-template-columns: 1fr; }
-            .stats-grid { grid-template-columns: repeat(2, 1fr); }
-            .cmd-name { min-width: 140px; }
-            .container { padding: 14px; }
+        @media(max-width:600px){
+            .sidebar{display:none}
+            .stats{grid-template-columns:1fr 1fr}
+            .main{padding:16px}
         }
     </style>
 </head>
@@ -274,342 +148,297 @@
 
 <div class="header">
     <div class="header-left">
-        <div class="logo">S</div>
-        <h1>sand<span>usr</span></h1>
+        <div class="logo">Z</div>
+        <h1><b>Zaya</b> UserBot</h1>
     </div>
-    <div id="statusBadge" class="status-badge offline">
-        <div class="status-dot"></div>
-        <span id="statusText">Offline</span>
+    <div class="header-right">
+        <span class="ver" id="hVer">v3.0</span>
+        <div id="statusPill" class="status-pill offline">
+            <div class="dot"></div>
+            <span id="statusText">Offline</span>
+        </div>
     </div>
 </div>
 
-<div class="container">
-    <!-- Stats -->
-    <div class="stats-grid" style="margin-bottom: 20px;">
-        <div class="stat">
-            <div class="stat-label">Статус</div>
-            <div class="stat-value green" id="statStatus">---</div>
+<div class="app">
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <div class="nav-section">Навигация</div>
+        <div class="nav-item active" data-tab="dashboard" onclick="openTab('dashboard')">
+            <div class="nav-icon">&#9632;</div>
+            <span>Обзор</span>
         </div>
-        <div class="stat">
-            <div class="stat-label">Модули</div>
-            <div class="stat-value purple" id="statModules">0</div>
+        <div class="nav-item" data-tab="modules" onclick="openTab('modules')">
+            <div class="nav-icon">&#9881;</div>
+            <span>Модули</span>
         </div>
-        <div class="stat">
-            <div class="stat-label">Аптайм</div>
-            <div class="stat-value blue" id="statUptime">---</div>
+        <div class="nav-item" data-tab="commands" onclick="openTab('commands')">
+            <div class="nav-icon">&#9998;</div>
+            <span>Команды</span>
         </div>
-        <div class="stat">
-            <div class="stat-label">Версия</div>
-            <div class="stat-value yellow" id="statVersion">3.0</div>
+        <div class="nav-item" data-tab="logs" onclick="openTab('logs')">
+            <div class="nav-icon">&#128196;</div>
+            <span>Логи</span>
         </div>
     </div>
 
-    <div class="grid">
-        <!-- Account -->
-        <div class="card">
-            <div class="card-header">
-                <h2>Аккаунт</h2>
+    <!-- Main content -->
+    <div class="main">
+
+        <!-- ═══ Dashboard ═══ -->
+        <div class="tab active" id="tab-dashboard">
+            <div class="stats">
+                <div class="stat">
+                    <div class="stat-label">Статус</div>
+                    <div class="stat-val c-green" id="sStatus">---</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Модули</div>
+                    <div class="stat-val c-accent" id="sModules">0</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Аптайм</div>
+                    <div class="stat-val c-orange" id="sUptime">---</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Версия</div>
+                    <div class="stat-val c-yellow" id="sVersion">3.0</div>
+                </div>
             </div>
-            <div class="card-body">
-                <div class="account-card">
-                    <div class="account-avatar">&#129302;</div>
-                    <div>
-                        <div class="account-name" id="accountName">---</div>
-                        <div class="account-detail" id="accountDetail">Ожидание подключения...</div>
+
+            <div class="card">
+                <div class="card-h"><h2>Аккаунт</h2></div>
+                <div class="card-b">
+                    <div class="acct">
+                        <div class="acct-avatar">&#128100;</div>
+                        <div>
+                            <div class="acct-name" id="acctName">---</div>
+                            <div class="acct-sub" id="acctSub">Ожидание подключения...</div>
+                        </div>
+                    </div>
+                    <div class="acct-row">
+                        <label>Аптайм:</label>
+                        <span id="acctUp">---</span>
                     </div>
                 </div>
-                <div class="uptime-bar">
-                    <span class="uptime-label">Аптайм:</span>
-                    <span class="uptime-value" id="uptimeValue">---</span>
+            </div>
+
+            <div class="card">
+                <div class="card-h">
+                    <h2>Логи (последние)</h2>
+                    <span class="badge" id="logBadge">0</span>
+                </div>
+                <div class="card-b" style="padding:0">
+                    <div class="log-box" id="dashLogs" style="height:300px;min-height:200px">
+                        <div style="padding:20px;color:var(--dim);text-align:center">Загрузка...</div>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- Logs -->
-        <div class="card">
-            <div class="card-header">
-                <h2>Логи</h2>
-                <span style="font-size: 12px; color: var(--text2);" id="logCount">0 записей</span>
-            </div>
-            <div class="card-body" style="padding: 0;">
-                <div class="log-container" id="logContainer">
-                    <div style="padding: 18px; color: var(--text2); text-align: center;">Загрузка...</div>
+        <!-- ═══ Modules ═══ -->
+        <div class="tab" id="tab-modules">
+            <div class="card">
+                <div class="card-h">
+                    <h2>Модули</h2>
+                    <span class="badge" id="modBadge">0 / 0</span>
+                </div>
+                <div class="card-b" id="modList">
+                    <div style="color:var(--dim);text-align:center;padding:20px">Загрузка...</div>
                 </div>
             </div>
         </div>
 
-        <!-- Scripts -->
-        <div class="card full">
-            <div class="card-header">
-                <h2>Модули</h2>
-                <span style="font-size: 12px; color: var(--text2);" id="scriptsCount">0 загружено</span>
-            </div>
-            <div class="card-body" id="scriptsList">
-                <div style="color: var(--text2); text-align: center;">Загрузка...</div>
+        <!-- ═══ Commands ═══ -->
+        <div class="tab" id="tab-commands">
+            <div class="card">
+                <div class="card-h"><h2>Команды</h2></div>
+                <div class="card-b" id="cmdList">
+                    <div style="color:var(--dim);text-align:center;padding:20px">Загрузка...</div>
+                </div>
             </div>
         </div>
 
-        <!-- Commands -->
-        <div class="card full">
-            <div class="card-header">
-                <h2>Команды</h2>
-            </div>
-            <div class="card-body" id="commandsList">
-                <div style="color: var(--text2); text-align: center;">Загрузка...</div>
+        <!-- ═══ Logs ═══ -->
+        <div class="tab" id="tab-logs">
+            <div class="card">
+                <div class="card-h">
+                    <h2>Логи</h2>
+                    <span class="badge" id="logCount">0</span>
+                </div>
+                <div class="card-b" style="padding:0">
+                    <div class="log-box" id="logBox">
+                        <div style="padding:20px;color:var(--dim);text-align:center">Загрузка...</div>
+                    </div>
+                </div>
             </div>
         </div>
+
     </div>
 </div>
 
-<!-- Toast -->
 <div id="toast" class="toast"></div>
 
 <script>
-const SCRIPT_ICONS = {
-    ping: "&#127891;",
-    notes: "&#128221;",
-    weather: "&#127780;",
-    translator: "&#127760;",
-    ai_chat: "&#129302;",
-    yandex_music: "&#127925;",
-};
+const ICONS={ping:"&#127891;",notes:"&#128221;",weather:"&#127780;",translator:"&#127760;",ai_chat:"&#129302;",yandex_music:"&#127925;",admin:"&#128737;",antimat:"&#129718;",autofire:"&#128293;",catart:"&#129424;",crypto:"&#128200;",predictions:"&#128302;",premium_emoji:"&#127912;",voice_saver:"&#127908;"};
 
-// ── Autostart state (fetched once) ──
-let autostartMode = "all";
-let autostartScripts = new Set();
+let autoMode="all",autoScripts=new Set();
 
-function fmtUptime(s) {
-    if (!s) return "---";
-    const d = Math.floor(s / 86400);
-    const h = Math.floor((s % 86400) / 3600);
-    const m = Math.floor((s % 3600) / 60);
-    let parts = [];
-    if (d > 0) parts.push(d + "д");
-    if (h > 0) parts.push(h + "ч");
-    parts.push(m + "м");
-    return parts.join(" ");
+function fmtUp(s){if(!s)return"---";const d=Math.floor(s/86400),h=Math.floor((s%86400)/3600),m=Math.floor((s%3600)/60);let p=[];if(d>0)p.push(d+"д");if(h>0)p.push(h+"ч");p.push(m+"м");return p.join(" ")}
+
+function esc(s){const d=document.createElement("div");d.textContent=s;return d.innerHTML}
+
+function toast(msg,ok=true){const t=document.getElementById("toast");t.textContent=msg;t.className="toast toast-"+(ok?"ok":"err")+" show";setTimeout(()=>{t.className="toast"},2500)}
+
+function openTab(id){
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+    document.getElementById('tab-'+id).classList.add('active');
+    document.querySelector(`.nav-item[data-tab="${id}"]`).classList.add('active');
 }
 
-function escHtml(s) {
-    const div = document.createElement("div");
-    div.textContent = s;
-    return div.innerHTML;
-}
+// ── API ──
 
-function showToast(msg, type = "success") {
-    const t = document.getElementById("toast");
-    t.textContent = msg;
-    t.className = "toast toast-" + type + " show";
-    setTimeout(() => { t.className = "toast"; }, 2500);
-}
-
-// ── API calls ──
-
-async function fetchStatus() {
-    try {
-        const r = await fetch("/api/status");
-        const d = await r.json();
-
-        const badge = document.getElementById("statusBadge");
-        const statStatus = document.getElementById("statStatus");
-        if (d.status === "online") {
-            badge.className = "status-badge online";
-            document.getElementById("statusText").textContent = "Online";
-            statStatus.textContent = "Online";
-            statStatus.className = "stat-value green";
-        } else {
-            badge.className = "status-badge offline";
-            document.getElementById("statusText").textContent = "Offline";
-            statStatus.textContent = "Offline";
-            statStatus.className = "stat-value";
+async function fetchStatus(){
+    try{
+        const r=await fetch("/api/status"),d=await r.json();
+        const pill=document.getElementById("statusPill");
+        const sv=document.getElementById("sStatus");
+        if(d.status==="online"){
+            pill.className="status-pill online";
+            document.getElementById("statusText").textContent="Online";
+            sv.textContent="Online";sv.className="stat-val c-green";
+        }else{
+            pill.className="status-pill offline";
+            document.getElementById("statusText").textContent="Offline";
+            sv.textContent="Offline";sv.className="stat-val c-red";
         }
-
-        document.getElementById("statModules").textContent = d.scripts_count;
-        document.getElementById("statUptime").textContent = fmtUptime(d.uptime);
-        document.getElementById("uptimeValue").textContent = fmtUptime(d.uptime);
-
-        if (d.account) {
-            document.getElementById("accountName").textContent = d.account;
-            document.getElementById("accountDetail").textContent = "Telegram Userbot";
+        document.getElementById("sModules").textContent=d.scripts_count;
+        document.getElementById("sUptime").textContent=fmtUp(d.uptime);
+        document.getElementById("acctUp").textContent=fmtUp(d.uptime);
+        if(d.account){
+            document.getElementById("acctName").textContent=d.account;
+            document.getElementById("acctSub").textContent="Telegram Userbot";
         }
-    } catch (e) { console.error(e); }
+    }catch(e){}
 }
 
-async function fetchLogs() {
-    try {
-        const r = await fetch("/api/logs");
-        const logs = await r.json();
-        const container = document.getElementById("logContainer");
-        document.getElementById("logCount").textContent = logs.length + " записей";
+async function fetchLogs(){
+    try{
+        const r=await fetch("/api/logs"),logs=await r.json();
+        document.getElementById("logBadge").textContent=logs.length;
+        document.getElementById("logCount").textContent=logs.length;
 
-        if (logs.length === 0) {
-            container.innerHTML = '<div style="padding: 18px; color: var(--text2); text-align: center;">Нет логов</div>';
-            return;
+        let html="";
+        if(!logs.length)html='<div style="padding:20px;color:var(--dim);text-align:center">Нет логов</div>';
+        for(const l of logs){
+            html+=`<div class="log-line"><span class="log-time">${l.time}</span><span class="log-lvl ${l.level}">${l.level}</span><span class="log-msg">${esc(l.message)}</span></div>`;
         }
+        document.getElementById("dashLogs").innerHTML=html;
+        document.getElementById("logBox").innerHTML=html;
 
-        let html = "";
-        for (const log of logs) {
-            html += `<div class="log-line">
-                <span class="log-time">${log.time}</span>
-                <span class="log-level ${log.level}">${log.level}</span>
-                <span class="log-msg">${escHtml(log.message)}</span>
-            </div>`;
-        }
-        container.innerHTML = html;
-        container.scrollTop = container.scrollHeight;
-    } catch (e) { console.error(e); }
+        const boxes=[document.getElementById("dashLogs"),document.getElementById("logBox")];
+        for(const b of boxes){b.scrollTop=b.scrollHeight}
+    }catch(e){}
 }
 
-async function fetchAutostart() {
-    try {
-        const r = await fetch("/api/autostart");
-        const d = await r.json();
-        autostartMode = d.mode;
-        autostartScripts = new Set(d.scripts);
-    } catch (e) { console.error(e); }
+async function fetchAuto(){
+    try{
+        const r=await fetch("/api/autostart"),d=await r.json();
+        autoMode=d.mode;autoScripts=new Set(d.scripts);
+    }catch(e){}
 }
 
-async function fetchScripts() {
-    try {
-        const r = await fetch("/api/scripts");
-        const scripts = await r.json();
-        const container = document.getElementById("scriptsList");
-        const loaded = scripts.filter(s => s.loaded).length;
-        document.getElementById("scriptsCount").textContent = loaded + " / " + scripts.length + " загружено";
+async function fetchMods(){
+    try{
+        const r=await fetch("/api/scripts"),scripts=await r.json();
+        const loaded=scripts.filter(s=>s.loaded).length;
+        document.getElementById("modBadge").textContent=loaded+" / "+scripts.length;
 
-        if (scripts.length === 0) {
-            container.innerHTML = '<div style="color: var(--text2); text-align: center;">Нет модулей</div>';
-            return;
-        }
+        if(!scripts.length){document.getElementById("modList").innerHTML='<div style="color:var(--dim);text-align:center;padding:20px">Нет модулей</div>';return}
 
-        let html = "";
-        for (const s of scripts) {
-            const icon = SCRIPT_ICONS[s.id] || "&#128196;";
-            const addonTags = s.addons.length > 0
-                ? ` <span class="script-tag tag-addon">${s.addons.length} аддонов</span>`
-                : "";
+        let html="";
+        for(const s of scripts){
+            const ico=ICONS[s.id]||"&#128196;";
+            const addTags=s.addons.length?` <span class="tag t-addon">${s.addons.length} адд.</span>`:"";
+            const cmdTag=s.command?` <span class="tag t-cmd">${esc(s.command)}</span>`:"";
+            const isAuto=autoMode==="all"||autoScripts.has(s.id);
+            const togCls=isAuto?"toggle on":"toggle";
 
-            // Autostart toggle state
-            const isAuto = autostartMode === "all" || autostartScripts.has(s.id);
-            const toggleClass = isAuto ? "toggle active" : "toggle";
-
-            // Buttons
-            let btns = "";
-            if (s.loaded) {
-                btns = `<button class="btn btn-unload" onclick="scriptAction('unload','${s.id}')">Выгрузить</button>`;
-                btns += ` <button class="btn btn-reload" onclick="scriptAction('reload','${s.id}')">Обновить</button>`;
-            } else {
-                btns = `<button class="btn btn-load" onclick="scriptAction('load','${s.id}')">Загрузить</button>`;
+            let btns="";
+            if(s.loaded){
+                btns=`<button class="btn btn-r" onclick="modAct('unload','${s.id}')">Выгрузить</button> <button class="btn btn-o" onclick="modAct('reload','${s.id}')">Обновить</button>`;
+            }else{
+                btns=`<button class="btn btn-g" onclick="modAct('load','${s.id}')">Загрузить</button>`;
             }
 
-            html += `<div class="script-item">
-                <div class="script-info">
-                    <div class="script-icon">${icon}</div>
+            html+=`<div class="scr-item">
+                <div class="scr-info">
+                    <div class="scr-icon">${ico}</div>
                     <div>
-                        <div class="script-name">${escHtml(s.name)}</div>
-                        <div class="script-desc">${escHtml(s.description)}</div>
+                        <div class="scr-name">${esc(s.name)}</div>
+                        <div class="scr-desc">${esc(s.description)}</div>
                     </div>
                 </div>
-                <div class="script-right">
-                    ${s.loaded
-                        ? '<span class="script-tag tag-loaded">Активен</span>'
-                        : '<span class="script-tag tag-unloaded">Выгружен</span>'}
-                    <span class="script-tag tag-lines">${s.lines} строк</span>
-                    ${addonTags}
-                    <div class="toggle-wrap" onclick="toggleAutostart('${s.id}', this)">
-                        <span class="toggle-label">Авто</span>
-                        <div class="${toggleClass}" data-script="${s.id}"></div>
+                <div class="scr-right">
+                    ${s.loaded?'<span class="tag t-on">Активен</span>':'<span class="tag t-off">Выгружен</span>'}
+                    <span class="tag t-lines">${s.lines} строк</span>
+                    ${addTags}${cmdTag}
+                    <div class="toggle-wrap" onclick="toggleAuto('${s.id}',this)">
+                        <span class="toggle-lbl">Авто</span>
+                        <div class="${togCls}" data-s="${s.id}"></div>
                     </div>
                     ${btns}
                 </div>
             </div>`;
         }
-        container.innerHTML = html;
-    } catch (e) { console.error(e); }
+        document.getElementById("modList").innerHTML=html;
+    }catch(e){}
 }
 
-async function fetchCommands() {
-    try {
-        const r = await fetch("/api/commands");
-        const cmds = await r.json();
-        const container = document.getElementById("commandsList");
-
-        let html = "";
-        for (const c of cmds) {
-            html += `<div class="cmd-row">
-                <div class="cmd-name">${escHtml(c.cmd)}</div>
-                <div class="cmd-desc">${escHtml(c.desc)}</div>
-            </div>`;
+async function fetchCmds(){
+    try{
+        const r=await fetch("/api/commands"),cmds=await r.json();
+        let html="";
+        for(const c of cmds){
+            html+=`<div class="cmd-row"><div class="cmd-code">${esc(c.cmd)}</div><div class="cmd-desc">${esc(c.desc)}</div></div>`;
         }
-        container.innerHTML = html;
-    } catch (e) { console.error(e); }
+        document.getElementById("cmdList").innerHTML=html||'<div style="color:var(--dim);text-align:center;padding:20px">Нет команд</div>';
+    }catch(e){}
 }
 
-// ── Actions ──
-
-async function scriptAction(action, name) {
-    try {
-        const r = await fetch(`/api/scripts/${action}/${name}`, { method: "POST" });
-        const d = await r.json();
-
-        if (d.success) {
-            const labels = { load: "загружен", unload: "выгружен", reload: "обновлён" };
-            showToast(`${name} ${labels[action]}`, "success");
-            await fetchScripts();
-            await fetchStatus();
-            await fetchLogs();
-        } else {
-            showToast(d.error || "Ошибка", "error");
-        }
-    } catch (e) {
-        showToast("Ошибка запроса", "error");
-    }
+async function modAct(act,name){
+    try{
+        const r=await fetch(`/api/scripts/${act}/${name}`,{method:"POST"}),d=await r.json();
+        if(d.success){
+            const l={load:"загружен",unload:"выгружен",reload:"обновлён"};
+            toast(name+" "+l[act]);
+            await fetchMods();await fetchStatus();await fetchLogs();
+        }else{toast(d.error||"Ошибка",false)}
+    }catch(e){toast("Ошибка запроса",false)}
 }
 
-async function toggleAutostart(name, el) {
-    const toggleDiv = el.querySelector(".toggle");
-    const isActive = toggleDiv.classList.contains("active");
-    const enabled = !isActive; // toggle to the opposite
-
-    try {
-        const r = await fetch(`/api/autostart/${name}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ enabled }),
-        });
-        const d = await r.json();
-
-        if (d.success) {
-            autostartMode = d.mode;
-            if (enabled) autostartScripts.add(name);
-            else autostartScripts.delete(name);
-
-            // Update all toggles visually
-            document.querySelectorAll(".toggle").forEach(t => {
-                const s = t.dataset.script;
-                if (!s) return;
-                const isOn = autostartMode === "all" || autostartScripts.has(s);
-                t.classList.toggle("active", isOn);
+async function toggleAuto(name,el){
+    const t=el.querySelector(".toggle"),on=t.classList.contains("on"),en=!on;
+    try{
+        const r=await fetch(`/api/autostart/${name}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({enabled:en})}),d=await r.json();
+        if(d.success){
+            autoMode=d.mode;
+            if(en)autoScripts.add(name);else autoScripts.delete(name);
+            document.querySelectorAll(".toggle").forEach(t2=>{
+                const s=t2.dataset.s;if(!s)return;
+                t2.classList.toggle("on",autoMode==="all"||autoScripts.has(s));
             });
-
-            const label = enabled ? "включён" : "выключен";
-            showToast(`Автозагрузка ${name}: ${label}`, "success");
-        } else {
-            showToast(d.error || "Ошибка", "error");
-        }
-    } catch (e) {
-        showToast("Ошибка запроса", "error");
-    }
+            toast("Автозагрузка "+name+": "+(en?"вкл":"выкл"));
+        }else{toast(d.error||"Ошибка",false)}
+    }catch(e){toast("Ошибка",false)}
 }
 
 // ── Init ──
-Promise.all([fetchAutostart(), fetchStatus(), fetchLogs(), fetchScripts(), fetchCommands()]);
-
-// Auto-refresh
-setInterval(fetchStatus, 5000);
-setInterval(fetchLogs, 3000);
-setInterval(async () => { await fetchAutostart(); await fetchScripts(); }, 10000);
+Promise.all([fetchAuto(),fetchStatus(),fetchLogs(),fetchMods(),fetchCmds()]);
+setInterval(fetchStatus,5000);
+setInterval(fetchLogs,3000);
+setInterval(async()=>{await fetchAuto();await fetchMods()},10000);
 </script>
-
 </body>
 </html>
