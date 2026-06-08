@@ -289,7 +289,7 @@ class App:
 
     # ─── виджеты ────────────────────────────────────────────────
 
-    def _row(self, parent, label_text, var, show=None, browse=False):
+    def _row(self, parent, label_text, var, show=None, browse=False, browse_file=False):
         r = tk.Frame(parent, bg=C["panel"])
         r.pack(fill="x", pady=3)
         tk.Label(r, text=label_text, bg=C["panel"], fg=C["text"],
@@ -306,6 +306,13 @@ class App:
                          font=("Segoe UI", 9), cursor="hand2", padx=10, pady=3)
             b.pack(side="right", padx=(8, 0))
             b.bind("<Button-1>", lambda e: self._browse(var))
+            b.bind("<Enter>", lambda e: b.configure(fg=C["text"]))
+            b.bind("<Leave>", lambda e: b.configure(fg=C["dim"]))
+        elif browse_file:
+            b = tk.Label(r, text="Файл", bg=C["card"], fg=C["dim"],
+                         font=("Segoe UI", 9), cursor="hand2", padx=10, pady=3)
+            b.pack(side="right", padx=(8, 0))
+            b.bind("<Button-1>", lambda e: self._browse_file(var))
             b.bind("<Enter>", lambda e: b.configure(fg=C["text"]))
             b.bind("<Leave>", lambda e: b.configure(fg=C["dim"]))
         return r
@@ -328,15 +335,32 @@ class App:
         return f
 
     def _bind_clipboard(self, widget):
-        """Bind clipboard shortcuts to a widget (fixes Ctrl+V on Canvas)."""
+        """Bind clipboard shortcuts to a widget (fixes Ctrl+V on Canvas).
+
+        Works with both Latin and Cyrillic keyboard layouts.
+        """
         widget.bind("<Button-1>", lambda e, w=widget: w.focus_set(), add="+")
+        # латиница
         widget.bind("<Control-v>", lambda e, w=widget: w.event_generate("<<Paste>>"))
         widget.bind("<Control-c>", lambda e, w=widget: w.event_generate("<<Copy>>"))
         widget.bind("<Control-x>", lambda e, w=widget: w.event_generate("<<Cut>>"))
         widget.bind("<Control-a>", lambda e, w=widget: w.select_range(0, "end"))
+        # кириллица (русская раскладка Ctrl+В/С/Ч/Ф)
+        widget.bind("<Control-в>", lambda e, w=widget: w.event_generate("<<Paste>>"))
+        widget.bind("<Control-с>", lambda e, w=widget: w.event_generate("<<Copy>>"))
+        widget.bind("<Control-ч>", lambda e, w=widget: w.event_generate("<<Cut>>"))
+        widget.bind("<Control-ф>", lambda e, w=widget: w.select_range(0, "end"))
 
     def _browse(self, var):
         p = filedialog.askdirectory(initialdir=var.get())
+        if p:
+            var.set(p)
+
+    def _browse_file(self, var):
+        p = filedialog.askopenfilename(
+            title="Выбрать файл",
+            initialdir=os.path.dirname(var.get()) if var.get() else None,
+        )
         if p:
             var.set(p)
 
@@ -350,7 +374,7 @@ class App:
         self._row(card, "API ID:", self.v_api_id)
         self._row(card, "API Hash:", self.v_api_hash)
         self._row(card, "Телефон:", self.v_phone)
-        self._row(card, "Session String:", self.v_session, show="*")
+        self._row(card, "Session String:", self.v_session, show="*", browse_file=True)
 
         tk.Label(f, text="API ID/Hash — my.telegram.org  |  Session — если авторизованы",
                  bg=C["panel"], fg=C["dim"], font=("Segoe UI", 8), anchor="w"
