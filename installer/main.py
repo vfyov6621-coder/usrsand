@@ -156,6 +156,9 @@ class App:
         self.root.configure(bg=C["bg"])
         self.root.resizable(False, False)
 
+        # иконка окна
+        self._set_icon()
+
         sx = (self.root.winfo_screenwidth() - 960) // 2
         sy = (self.root.winfo_screenheight() - 640) // 2
         self.root.geometry(f"960x640+{sx}+{sy}")
@@ -193,6 +196,26 @@ class App:
             threading.Thread(target=self._check_installer_update, daemon=True).start()
 
         self.root.protocol("WM_DELETE_WINDOW", self._quit)
+
+    # ─── иконка ───────────────────────────────────────────────────
+
+    def _set_icon(self):
+        """Set window icon from .ico or .png."""
+        ico = _resource("icon.ico")
+        png = _resource("icon.png")
+        try:
+            if os.path.exists(ico):
+                self.root.iconbitmap(ico)
+                return
+        except Exception:
+            pass
+        try:
+            if os.path.exists(png) and HAS_PIL:
+                from PIL import ImageTk
+                self._icon_photo = ImageTk.PhotoImage(Image.open(png).resize((32, 32), Image.LANCZOS))
+                self.root.iconphoto(True, self._icon_photo)
+        except Exception:
+            pass
 
     # ─── UI ──────────────────────────────────────────────────────
 
@@ -440,7 +463,8 @@ class App:
                 ov = Image.new("RGBA", img.size, (30, 30, 46, 210))
                 img = Image.alpha_composite(img, ov)
                 self._bg_photo = ImageTk.PhotoImage(img)
-                self.cv.create_image(0, 0, anchor="nw", image=self._bg_photo)
+                self.cv.create_image(0, 0, anchor="nw", image=self._bg_photo, tags="bg_img")
+                self.cv.tag_lower("bg_img")  # фон ПОД панелью с UI
                 return
             except Exception:
                 pass

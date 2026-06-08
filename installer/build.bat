@@ -20,7 +20,8 @@ pyinstaller ^
     --windowed ^
     --name "ZayaUserBot_Setup" ^
     --add-data "background.png;." ^
-    --icon "NONE" ^
+    --add-data "icon.ico;." ^
+    --icon "icon.ico" ^
     main.py
 echo   ✅ done
 
