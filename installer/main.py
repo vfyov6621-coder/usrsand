@@ -277,6 +277,7 @@ class App:
                      highlightcolor=C["accent"], highlightbackground=C["border"],
                      show=show)
         e.pack(side="left", fill="x", expand=True, padx=(8, 0))
+        self._bind_clipboard(e)
         if browse:
             b = tk.Label(r, text="Обзор", bg=C["card"], fg=C["dim"],
                          font=("Segoe UI", 9), cursor="hand2", padx=10, pady=3)
@@ -302,6 +303,14 @@ class App:
         f = tk.Frame(parent, bg=C["card"], padx=16, pady=12)
         f.pack(fill="x", pady=(0, 10))
         return f
+
+    def _bind_clipboard(self, widget):
+        """Bind clipboard shortcuts to a widget (fixes Ctrl+V on Canvas)."""
+        widget.bind("<Button-1>", lambda e, w=widget: w.focus_set(), add="+")
+        widget.bind("<Control-v>", lambda e, w=widget: w.event_generate("<<Paste>>"))
+        widget.bind("<Control-c>", lambda e, w=widget: w.event_generate("<<Copy>>"))
+        widget.bind("<Control-x>", lambda e, w=widget: w.event_generate("<<Cut>>"))
+        widget.bind("<Control-a>", lambda e, w=widget: w.select_range(0, "end"))
 
     def _browse(self, var):
         p = filedialog.askdirectory(initialdir=var.get())
@@ -371,10 +380,12 @@ class App:
         ir.pack(fill="x", pady=8)
         tk.Label(ir, text="Интервал (Ч:М):", bg=C["card"], fg=C["text"],
                  font=("Segoe UI", 10), anchor="w").pack(side="left")
-        tk.Entry(ir, textvariable=self.v_interval, bg=C["input"], fg=C["text"],
+        e_interval = tk.Entry(ir, textvariable=self.v_interval, bg=C["input"], fg=C["text"],
                  insertbackground=C["text"], font=("Segoe UI", 10), width=7,
                  relief="flat", highlightthickness=1, bd=4,
-                 highlightcolor=C["accent"], highlightbackground=C["border"]).pack(side="left", padx=(8, 0))
+                 highlightcolor=C["accent"], highlightbackground=C["border"])
+        e_interval.pack(side="left", padx=(8, 0))
+        self._bind_clipboard(e_interval)
         tk.Label(ir, text="  напр. 1:30 = 1ч 30мин", bg=C["card"], fg=C["dim"],
                  font=("Segoe UI", 9)).pack(side="left", padx=8)
 
