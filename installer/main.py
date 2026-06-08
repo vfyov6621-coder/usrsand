@@ -172,10 +172,8 @@ class App:
         self.v_api_hash = tk.StringVar(value=self.cfg.get("api_hash", ""))
         self.v_phone = tk.StringVar(value=self.cfg.get("phone", ""))
         self.v_session = tk.StringVar(value=self.cfg.get("session_string", ""))
-        self.v_token = tk.StringVar(value=self.cfg.get("github_token", ""))
         self.v_auto = tk.BooleanVar(value=self.cfg.get("auto_update", False))
         self.v_interval = tk.StringVar(value=self.cfg.get("update_interval", "1:00"))
-        self.v_inst_auto = tk.BooleanVar(value=self.cfg.get("installer_auto_update", True))
 
         self._bg_photo = None
         self.running = True
@@ -192,8 +190,7 @@ class App:
             self._start_auto()
 
         # проверить обновление установщика при старте
-        if self.v_inst_auto.get():
-            threading.Thread(target=self._check_installer_update, daemon=True).start()
+        threading.Thread(target=self._check_installer_update, daemon=True).start()
 
         self.root.protocol("WM_DELETE_WINDOW", self._quit)
 
@@ -447,8 +444,6 @@ class App:
         tk.Label(ir, text="  напр. 1:30 = 1ч 30мин", bg=C["card"], fg=C["dim"],
                  font=("Segoe UI", 9)).pack(side="left", padx=8)
 
-        self._row(card2, "GitHub Token:", self.v_token)
-
         self._btn(card2, "  Сохранить  ", self._save_settings, C["input"]).pack(anchor="w", pady=(8, 0))
 
         # разделитель
@@ -599,8 +594,7 @@ class App:
 
     def _check(self):
         self._msg("Проверяю обновления бота...")
-        token = self.v_token.get().strip() or None
-        data = _github_api(API_URL, token)
+        data = _github_api(API_URL)
         if data is None:
             self._msg("Не удалось подключиться к GitHub")
             return
@@ -679,8 +673,7 @@ class App:
 
             if self.running and self.v_auto.get():
                 self.root.after(0, lambda: self._msg("Авто-проверка..."))
-                token = self.v_token.get().strip() or None
-                data = _github_api(API_URL, token)
+                data = _github_api(API_URL)
                 if data:
                     rsha = data.get("sha", "")
                     if self.current_sha and rsha != self.current_sha:
@@ -690,9 +683,6 @@ class App:
     def _save_settings(self):
         self.cfg.set("auto_update", self.v_auto.get())
         self.cfg.set("update_interval", self.v_interval.get())
-        t = self.v_token.get().strip()
-        if t:
-            self.cfg.set("github_token", t)
         self._msg("Настройки сохранены")
         if self.v_auto.get():
             self._start_auto()
@@ -700,8 +690,7 @@ class App:
     # ═══ Самообновление установщика (.exe) ═══════════════════════════
 
     def _check_installer_update(self):
-        token = self.v_token.get().strip() or None
-        data = _github_api(RELEASES_URL, token)
+        data = _github_api(RELEASES_URL)
         if data is None:
             return
 
@@ -744,11 +733,10 @@ class App:
 
     def _update_installer(self):
         self._msg("Скачиваю обновление установщика...")
-        token = self.v_token.get().strip() or None
 
         # скачать во временный файл
         tmp = os.path.join(tempfile.gettempdir(), "ZayaUserBot_Setup_new.exe")
-        if _download_file(self.cfg.get("_installer_download_url", ""), tmp, token):
+        if _download_file(self.cfg.get("_installer_download_url", ""), tmp):
             self._msg("Скачано! Запускаю новую версию...")
 
             # путь к текущему .exe
