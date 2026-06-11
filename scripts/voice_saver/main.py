@@ -1,9 +1,9 @@
 """
 Voice Saver — сохранение и отправка голосовых сообщений
-.гч с <имя>  — сохранить (ответ на голосовое / кружок)
-.гч о <имя>  — отправить сохранённое гч
-.гч сп       — список сохранённых
-.гч у <имя>  — удалить
+-гч с <имя>  — сохранить (ответ на голосовое / кружок)
+-гч о <имя>  — отправить сохранённое гч
+-гч сп       — список сохранённых
+-гч у <имя>  — удалить
 """
 
 import os
@@ -39,17 +39,17 @@ def register(client):
     from pyrogram.enums import ParseMode
     from pyrogram.types import Message
 
-    @client.on_message(filters.regex(r"^\.гч(?:\s|$)") & filters.me)
+    @client.on_message(filters.regex(r"^[-/]гч(?:\s|$)") & filters.me)
     async def voice_handler(client, message: Message):
         args = message.text.split(maxsplit=2)
-        # .гч без аргументов — справка
+        # -гч без аргументов — справка
         if len(args) < 2:
             await message.edit_text(
                 "<b>🎤 Голосовые сообщения</b>\n\n"
-                "<code>.гч с &lt;имя&gt;</code> — сохранить (ответ на гс/гч)\n"
-                "<code>.гч о &lt;имя&gt;</code> — отправить\n"
-                "<code>.гч сп</code> — список\n"
-                "<code>.гч у &lt;имя&gt;</code> — удалить",
+                "<code>-гч с &lt;имя&gt;</code> — сохранить (ответ на гс/гч)\n"
+                "<code>-гч о &lt;имя&gt;</code> — отправить\n"
+                "<code>-гч сп</code> — список\n"
+                "<code>-гч у &lt;имя&gt;</code> — удалить",
                 parse_mode=ParseMode.HTML,
             )
             return
@@ -62,7 +62,7 @@ def register(client):
             if not voices:
                 await message.edit_text(
                     "🎤 Сохранённых голосовых нет.\n\n"
-                    "<code>.гч с &lt;имя&gt;</code> (ответ на гс/гч)",
+                    "<code>-гч с &lt;имя&gt;</code> (ответ на гс/гч)",
                     parse_mode=ParseMode.HTML,
                 )
                 return
@@ -81,7 +81,7 @@ def register(client):
         if action == "у":
             if len(args) < 3:
                 await message.edit_text(
-                    "❌ <code>.гч у &lt;имя&gt;</code>",
+                    "❌ <code>-гч у &lt;имя&gt;</code>",
                     parse_mode=ParseMode.HTML,
                 )
                 return
@@ -105,7 +105,7 @@ def register(client):
         if action == "о":
             if len(args) < 3:
                 await message.edit_text(
-                    "❌ <code>.гч о &lt;имя&gt;</code>",
+                    "❌ <code>-гч о &lt;имя&gt;</code>",
                     parse_mode=ParseMode.HTML,
                 )
                 return
@@ -175,7 +175,7 @@ def register(client):
         if action == "с":
             if len(args) < 3:
                 await message.edit_text(
-                    "❌ <code>.гч с &lt;имя&gt;</code> (ответ на гс/гч)",
+                    "❌ <code>-гч с &lt;имя&gt;</code> (ответ на гс/гч)",
                     parse_mode=ParseMode.HTML,
                 )
                 return
@@ -218,13 +218,13 @@ def register(client):
 
         # ── НЕИЗВЕСТНАЯ КОМАНДА ──────────────────────────────────
         await message.edit_text(
-            "❌ Неизвестная команда. <code>.гч</code> для справки",
+            "❌ Неизвестная команда. <code>-гч</code> для справки",
             parse_mode=ParseMode.HTML,
         )
 
 
 def on_load():
-    print("[VoiceSaver] Loaded. .гч с/о/сп/у")
+    print("[VoiceSaver] Loaded. -гч с/о/сп/у")
 
 
 def on_unload():
