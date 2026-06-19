@@ -4,10 +4,14 @@ Voice Saver — сохранение и отправка медиафайлов
 -гч о <имя>  — отправить сохранённое
 -гч сп       — список сохранённых
 -гч у <имя>  — удалить
+
+mp3 автоматически пересохраняется как голосовое,
+mp4 — как кружок.
 """
 
 import os
 import json
+import tempfile
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(
@@ -16,7 +20,6 @@ DATA_FILE = os.path.join(
     "voices.json",
 )
 
-# Иконки по типу
 TYPE_ICONS = {
     "voice": "🎤",
     "round": "🔴",
@@ -51,7 +54,7 @@ def _save(data: dict):
 
 
 def _detect_reply_type(reply) -> tuple:
-    """Определяет тип медиа в ответе. Возвращает (type_str, file_id) или (None, None)."""
+    """Определяет тип медиа. Возвращает (type_str, file_id) или (None, None)."""
     if reply.voice:
         return "voice", reply.voice.file_id
     if reply.video_note:
@@ -69,6 +72,60 @@ def _detect_reply_type(reply) -> tuple:
         if mime.startswith("audio/") or fname.endswith((".mp3", ".ogg", ".flac", ".wav", ".aac")):
             return "audio", doc.file_id
     return None, None
+
+
+def _needs_convert(vtype: str) -> bool:
+    """Нужна ли переконвертация файла."""
+    return vtype in ("audio", "video", "document_video")
+
+
+async def _convert_and_get_fid(client, reply, vtype: str) -> str:
+    """Скачивает файл и переконвертирует: audio→voice, video→round.
+    Возвращает новый file_id."""
+    # скачать во временный файл
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".tmp")
+    tmp_path = tmp.name
+    tmp.close()
+
+    try:
+        if vtype == "audio":
+            await reply.download(file_name=tmp_path)
+        elif vtype in ("video", "document_video"):
+            await reply.download(file_name=tmp_path)
+    except Exception:
+        os.unlink(tmp_path)
+        raise
+
+    try:
+        # загрузить как нужный тип в "Избранное" и получить file_id
+        me = await client.get_me()
+        if vtype == "audio":
+            msg = await client.send_voice(
+                chat_id=me.id,
+                voice=tmp_path,
+            )
+            new_type = "voice"
+        else:
+            msg = await client.send_video_note(
+                chat_id=me.id,
+                video_note=tmp_path,
+            )
+            new_type = "round"
+
+        new_fid = msg.voice.file_id if new_type == "voice" else msg.video_note.file_id
+
+        # удалить сообщение из избранного
+        try:
+            await msg.delete()
+        except Exception:
+            pass
+
+        return new_fid, new_type
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
 
 
 async def _send_saved(client, chat_id, fid, vtype):
@@ -99,7 +156,7 @@ def register(client):
         if len(args) < 2:
             await message.edit_text(
                 "<b>📦 Сохранение медиа</b>\n\n"
-                "<code>-гч с &lt;имя&gt;</code> — сохранить (ответ на гс/кружок/mp3/mp4)\n"
+                "<code>-гч с &lt;имя&gt;</code> — сохранить (гс/кружок/mp3/mp4)\n"
                 "<code>-гч о &lt;имя&gt;</code> — отправить\n"
                 "<code>-гч сп</code> — список\n"
                 "<code>-гч у &lt;имя&gt;</code> — удалить",
@@ -232,14 +289,28 @@ def register(client):
                 )
                 return
 
+            save_type = vtype
+
+            # переконвертация: mp3→голосовое, mp4→кружок
+            if _needs_convert(vtype):
+                await message.edit_text("⏳ Переконвертация...")
+                try:
+                    file_id, save_type = await _convert_and_get_fid(client, reply, vtype)
+                except Exception as e:
+                    await message.edit_text(
+                        f"❌ Ошибка конвертации: {e}",
+                        parse_mode=ParseMode.HTML,
+                    )
+                    return
+
             voices = _load()
             voices[name] = {
                 "file_id": file_id,
-                "type": vtype,
+                "type": save_type,
             }
             _save(voices)
 
-            label = TYPE_LABELS.get(vtype, vtype)
+            label = TYPE_LABELS.get(save_type, save_type)
             await message.edit_text(
                 f"✅ {label} <b>{name}</b> сохранено!",
                 parse_mode=ParseMode.HTML,
