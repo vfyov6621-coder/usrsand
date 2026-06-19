@@ -458,11 +458,8 @@ async def _handle_analyze(client, message: Message, args_raw: str):
     count = min(max(count, 5), MAX_MESSAGES)
 
     # Показываем загрузку
-    status_msg = None
-    try:
-        await message.edit_text(f"🔍 Собираю сообщения...", parse_mode=ParseMode.HTML)
-        status_msg = message
-    except Exception:
+    status_msg = await safe_edit(message, f"🔍 Собираю сообщения...", parse_mode=ParseMode.HTML)
+    if not status_msg:
         status_msg = await message.reply("🔍 Собираю сообщения...", quote=True)
 
     # Определяем пользователя
@@ -524,11 +521,8 @@ async def _handle_summary(client, message: Message, args_raw: str):
 
     count = min(max(count, 5), MAX_MESSAGES)
 
-    status_msg = None
-    try:
-        await message.edit_text("🔍 Собираю сообщения чата...", parse_mode=ParseMode.HTML)
-        status_msg = message
-    except Exception:
+    status_msg = await safe_edit(message, "🔍 Собираю сообщения чата...", parse_mode=ParseMode.HTML)
+    if not status_msg:
         status_msg = await message.reply("🔍 Собираю сообщения чата...", quote=True)
 
     # Собираем все сообщения (без фильтра по юзеру)
@@ -735,11 +729,8 @@ def register(client):
             # -ии <текст> — задать вопрос
             question = args[1].strip()
 
-            thinking_msg = None
-            try:
-                await message.edit_text("🤔 Думаю...", parse_mode=ParseMode.HTML)
-                thinking_msg = message
-            except Exception:
+            thinking_msg = await safe_edit(message, "🤔 Думаю...", parse_mode=ParseMode.HTML)
+            if not thinking_msg:
                 thinking_msg = await message.reply("🤔 Думаю...", quote=True)
 
             _load_history()

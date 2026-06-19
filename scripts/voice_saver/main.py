@@ -147,6 +147,7 @@ def register(client):
     from pyrogram import filters
     from pyrogram.enums import ParseMode
     from pyrogram.types import Message
+    from scripts._utils import safe_edit
 
     @client.on_message(filters.regex(r"^[-/]гч(?:\s|$)") & filters.me)
     async def voice_handler(client, message: Message):
@@ -154,7 +155,7 @@ def register(client):
 
         # -гч без аргументов — справка
         if len(args) < 2:
-            await message.edit_text(
+            await safe_edit(message,
                 "<b>📦 Сохранение медиа</b>\n\n"
                 "<code>-гч с &lt;имя&gt;</code> — сохранить (гс/кружок/mp3/mp4)\n"
                 "<code>-гч о &lt;имя&gt;</code> — отправить\n"
@@ -170,7 +171,7 @@ def register(client):
         if action == "сп":
             voices = _load()
             if not voices:
-                await message.edit_text(
+                await safe_edit(message,
                     "📦 Сохранённых медиа нет.\n\n"
                     "<code>-гч с &lt;имя&gt;</code> (ответ на медиа)",
                     parse_mode=ParseMode.HTML,
@@ -181,7 +182,7 @@ def register(client):
                 t = info.get("type", "voice")
                 icon = TYPE_ICONS.get(t, "📎")
                 lines.append(f"  {icon} <code>{name}</code>")
-            await message.edit_text(
+            await safe_edit(message,
                 f"📦 <b>Сохранённые ({len(voices)}):</b>\n\n"
                 + "\n".join(lines),
                 parse_mode=ParseMode.HTML,
@@ -191,7 +192,7 @@ def register(client):
         # ── УДАЛИТЬ ──────────────────────────────────────────────
         if action == "у":
             if len(args) < 3:
-                await message.edit_text(
+                await safe_edit(message,
                     "❌ <code>-гч у &lt;имя&gt;</code>",
                     parse_mode=ParseMode.HTML,
                 )
@@ -199,14 +200,14 @@ def register(client):
             name = args[2].strip()
             voices = _load()
             if name not in voices:
-                await message.edit_text(
+                await safe_edit(message,
                     f"❌ <b>{name}</b> не найдено",
                     parse_mode=ParseMode.HTML,
                 )
                 return
             del voices[name]
             _save(voices)
-            await message.edit_text(
+            await safe_edit(message,
                 f"✅ <b>{name}</b> удалено",
                 parse_mode=ParseMode.HTML,
             )
@@ -215,7 +216,7 @@ def register(client):
         # ── ОТПРАВИТЬ ────────────────────────────────────────────
         if action == "о":
             if len(args) < 3:
-                await message.edit_text(
+                await safe_edit(message,
                     "❌ <code>-гч о &lt;имя&gt;</code>",
                     parse_mode=ParseMode.HTML,
                 )
@@ -223,7 +224,7 @@ def register(client):
             name = args[2].strip()
             voices = _load()
             if name not in voices:
-                await message.edit_text(
+                await safe_edit(message,
                     f"❌ <b>{name}</b> не найдено",
                     parse_mode=ParseMode.HTML,
                 )
@@ -233,7 +234,7 @@ def register(client):
             vtype = voices[name].get("type", "voice")
 
             if not fid:
-                await message.edit_text(
+                await safe_edit(message,
                     f"❌ file_id <b>{name}</b> отсутствует",
                     parse_mode=ParseMode.HTML,
                 )
@@ -267,7 +268,7 @@ def register(client):
         # ── СОХРАНИТЬ ─────────────────────────────────────────────
         if action == "с":
             if len(args) < 3:
-                await message.edit_text(
+                await safe_edit(message,
                     "❌ <code>-гч с &lt;имя&gt;</code> (ответ на медиа)",
                     parse_mode=ParseMode.HTML,
                 )
@@ -275,7 +276,7 @@ def register(client):
             name = args[2].strip()
             reply = message.reply_to_message
             if not reply:
-                await message.edit_text(
+                await safe_edit(message,
                     "❌ Ответьте на медиафайл",
                     parse_mode=ParseMode.HTML,
                 )
@@ -283,7 +284,7 @@ def register(client):
 
             vtype, file_id = _detect_reply_type(reply)
             if not vtype or not file_id:
-                await message.edit_text(
+                await safe_edit(message,
                     "❌ В ответе должно быть голосовое, кружок, аудио (mp3) или видео (mp4)",
                     parse_mode=ParseMode.HTML,
                 )
@@ -293,11 +294,11 @@ def register(client):
 
             # переконвертация: mp3→голосовое, mp4→кружок
             if _needs_convert(vtype):
-                await message.edit_text("⏳ Переконвертация...")
+                await safe_edit(message,"⏳ Переконвертация...")
                 try:
                     file_id, save_type = await _convert_and_get_fid(client, reply, vtype)
                 except Exception as e:
-                    await message.edit_text(
+                    await safe_edit(message,
                         f"❌ Ошибка конвертации: {e}",
                         parse_mode=ParseMode.HTML,
                     )
@@ -311,14 +312,14 @@ def register(client):
             _save(voices)
 
             label = TYPE_LABELS.get(save_type, save_type)
-            await message.edit_text(
+            await safe_edit(message,
                 f"✅ {label} <b>{name}</b> сохранено!",
                 parse_mode=ParseMode.HTML,
             )
             return
 
         # ── НЕИЗВЕСТНАЯ КОМАНДА ──────────────────────────────────
-        await message.edit_text(
+        await safe_edit(message,
             "❌ Неизвестная команда. <code>-гч</code> для справки",
             parse_mode=ParseMode.HTML,
         )

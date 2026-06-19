@@ -48,9 +48,35 @@ def cmd_neg(*commands):
 async def safe_edit(message, text, **kwargs):
     """
     Safe edit_text with fallback to reply.
-    In channels without edit rights, edit_text throws ChatWriteForbidden.
-    This tries edit_text first, then falls back to reply.
+
+    If the message is a **command** (starts with ``-`` or ``/``) that was
+    sent as a reply to another message, the result will be sent as a reply
+    to that original message (and the command message is deleted).
+
+    Subsequent calls with the *result* message just edit it normally,
+    because it no longer starts with ``-`` / ``/``.
     """
+    _is_command = bool(
+        message.text
+        and message.text.lstrip()[:1] in "-/"
+    )
+
+    # Команда-ответ → удалить команду, ответить на оригинал
+    if _is_command and message.reply_to_message:
+        try:
+            await message.delete()
+        except Exception:
+            pass
+        try:
+            return await message.reply_to_message.reply(text, quote=True, **kwargs)
+        except Exception:
+            try:
+                return await message.reply(text, quote=False, **kwargs)
+            except Exception:
+                pass
+        return None
+
+    # Обычный случай — редактируем своё сообщение
     try:
         return await message.edit_text(text, **kwargs)
     except Exception:

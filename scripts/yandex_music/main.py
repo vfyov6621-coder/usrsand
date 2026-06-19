@@ -11,6 +11,8 @@ import tempfile
 import shutil
 from pathlib import Path
 
+from scripts._utils import safe_edit
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 TOKEN_FILE = os.path.join(SCRIPT_DIR, "token.txt")
 BAR_CFG_FILE = os.path.join(SCRIPT_DIR, "bar_settings.json")
@@ -133,7 +135,7 @@ async def _download_send(client, message, track):
         ym = _get_client()
         infos = await _run_sync(ym.tracks_download_info, track.id)
         if not infos:
-            await message.edit_text("\u274c Не удалось получить информацию для скачивания")
+            await safe_edit(message,"\u274c Не удалось получить информацию для скачивания")
             return
 
         best = max(
@@ -149,7 +151,7 @@ async def _download_send(client, message, track):
         safe_name = _clean_filename(f"{title} - {artist}")
         filepath = os.path.join(temp_dir, f"{safe_name}.mp3")
 
-        await message.edit_text(f"\u23ec Скачиваю {best.bitrate_in_kbps} kbps\u2026")
+        await safe_edit(message,f"\u23ec Скачиваю {best.bitrate_in_kbps} kbps\u2026")
         best.download(filepath)
 
         # fetch cover for thumbnail
@@ -166,7 +168,7 @@ async def _download_send(client, message, track):
         artists_str = ", ".join(a.name for a in track.artists) if track.artists else ""
         duration_s = (track.duration_ms or 0) // 1000
 
-        await message.edit_text("\ud83d\udce4 Отправляю\u2026")
+        await safe_edit(message,"\ud83d\udce4 Отправляю\u2026")
 
         try:
             await client.send_audio(
@@ -189,11 +191,11 @@ async def _download_send(client, message, track):
                 await message.delete()
             except Exception as e2:
                 log.error("send_document failed: %s", e2, exc_info=True)
-                await message.edit_text(f"\u274c Не удалось отправить: {e2}")
+                await safe_edit(message,f"\u274c Не удалось отправить: {e2}")
 
     except Exception as e:
         log.error("download error: %s", e, exc_info=True)
-        await message.edit_text(f"\u274c Ошибка скачивания: {e}")
+        await safe_edit(message,f"\u274c Ошибка скачивания: {e}")
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
@@ -279,7 +281,7 @@ async def _cmd_help(message) -> None:
         "OAuth авторизация</a>"
     )
     try:
-        await message.edit_text(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+        await safe_edit(message,text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
     except Exception:
         await message.reply(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
@@ -292,7 +294,7 @@ async def _cmd_search(client, message) -> None:
     parts = message.text.split(maxsplit=2)
     if len(parts) < 3:
         try:
-            await message.edit_text(
+            await safe_edit(message,
                 "\u274c Использование: <code>-ям поиск запрос</code>",
                 parse_mode=ParseMode.HTML,
             )
@@ -302,13 +304,13 @@ async def _cmd_search(client, message) -> None:
 
     query = parts[2]
     try:
-        await message.edit_text("\ud83d\udd0d Ищу\u2026")
+        await safe_edit(message,"\ud83d\udd0d Ищу\u2026")
         ym = _get_client()
         result = await _run_sync(ym.search, query, "track")
 
         if not result or not result.tracks or not result.tracks.results:
             try:
-                await message.edit_text("\u2764\ufe0f Ничего не найдено")
+                await safe_edit(message,"\u2764\ufe0f Ничего не найдено")
             except Exception:
                 pass
             return
@@ -330,19 +332,19 @@ async def _cmd_search(client, message) -> None:
             kw["reply_markup"] = InlineKeyboardMarkup(buttons)
 
         try:
-            await message.edit_text(**kw)
+            await safe_edit(message,**kw)
         except Exception:
             await message.reply(**kw)
 
     except ValueError as e:
         try:
-            await message.edit_text(f"\u274c {e}")
+            await safe_edit(message,f"\u274c {e}")
         except Exception:
             pass
     except Exception as e:
         log.error("search error: %s", e, exc_info=True)
         try:
-            await message.edit_text(f"\u274c Ошибка поиска: {e}")
+            await safe_edit(message,f"\u274c Ошибка поиска: {e}")
         except Exception:
             pass
 
@@ -352,7 +354,7 @@ async def _cmd_download(client, message) -> None:
     parts = message.text.split(maxsplit=2)
     if len(parts) < 3:
         try:
-            await message.edit_text(
+            await safe_edit(message,
                 "\u274c Использование: <code>-ям скачать id_трека</code>",
                 parse_mode=ParseMode.HTML,
             )
@@ -363,24 +365,24 @@ async def _cmd_download(client, message) -> None:
     track_id = parts[2].strip()
     try:
         ym = _get_client()
-        await message.edit_text("\ud83c\udfb5 Загружаю информацию\u2026")
+        await safe_edit(message,"\ud83c\udfb5 Загружаю информацию\u2026")
         tracks = await _run_sync(ym.tracks, track_id)
         if not tracks:
             try:
-                await message.edit_text("\u274c Трек не найден")
+                await safe_edit(message,"\u274c Трек не найден")
             except Exception:
                 pass
             return
         await _download_send(client, message, tracks[0])
     except ValueError as e:
         try:
-            await message.edit_text(f"\u274c {e}")
+            await safe_edit(message,f"\u274c {e}")
         except Exception:
             pass
     except Exception as e:
         log.error("download-by-id error: %s", e, exc_info=True)
         try:
-            await message.edit_text(f"\u274c Ошибка: {e}")
+            await safe_edit(message,f"\u274c Ошибка: {e}")
         except Exception:
             pass
 
@@ -392,7 +394,7 @@ async def _cmd_lyrics(message) -> None:
     parts = message.text.split(maxsplit=2)
     if len(parts) < 3:
         try:
-            await message.edit_text(
+            await safe_edit(message,
                 "\u274c Использование: <code>-ям текст id_трека</code>",
                 parse_mode=ParseMode.HTML,
             )
@@ -403,12 +405,12 @@ async def _cmd_lyrics(message) -> None:
     track_id = parts[2].strip()
     try:
         ym = _get_client()
-        await message.edit_text("\ud83d\udcdd Загружаю текст\u2026")
+        await safe_edit(message,"\ud83d\udcdd Загружаю текст\u2026")
 
         tracks = await _run_sync(ym.tracks, track_id)
         if not tracks:
             try:
-                await message.edit_text("\u274c Трек не найден")
+                await safe_edit(message,"\u274c Трек не найден")
             except Exception:
                 pass
             return
@@ -419,7 +421,7 @@ async def _cmd_lyrics(message) -> None:
         if not lyrics_data:
             artists = ", ".join(a.name for a in track.artists) if track.artists else ""
             try:
-                await message.edit_text(
+                await safe_edit(message,
                     f"\u274c Текст песни недоступен для:\n"
                     f"\ud83c\udfb5 <b>{track.title}</b> \u2014 {artists}",
                     parse_mode=ParseMode.HTML,
@@ -436,7 +438,7 @@ async def _cmd_lyrics(message) -> None:
 
         if not lyrics_text:
             try:
-                await message.edit_text("\u274c Текст песни пуст или недоступен")
+                await safe_edit(message,"\u274c Текст песни пуст или недоступен")
             except Exception:
                 pass
             return
@@ -449,19 +451,19 @@ async def _cmd_lyrics(message) -> None:
             full = full[:3900] + "\n\n<i>\u2026обрезано</i>"
 
         try:
-            await message.edit_text(full, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+            await safe_edit(message,full, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
         except Exception:
             await message.reply(full, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
     except ValueError as e:
         try:
-            await message.edit_text(f"\u274c {e}")
+            await safe_edit(message,f"\u274c {e}")
         except Exception:
             pass
     except Exception as e:
         log.error("lyrics error: %s", e, exc_info=True)
         try:
-            await message.edit_text(f"\u274c Ошибка: {e}")
+            await safe_edit(message,f"\u274c Ошибка: {e}")
         except Exception:
             pass
 
@@ -474,7 +476,7 @@ async def _cmd_artist(client, message) -> None:
     parts = message.text.split(maxsplit=2)
     if len(parts) < 3:
         try:
-            await message.edit_text(
+            await safe_edit(message,
                 "\u274c Использование: <code>-ям артист запрос</code>",
                 parse_mode=ParseMode.HTML,
             )
@@ -484,13 +486,13 @@ async def _cmd_artist(client, message) -> None:
 
     query = parts[2]
     try:
-        await message.edit_text("\ud83c\udfa4 Ищу исполнителя\u2026")
+        await safe_edit(message,"\ud83c\udfa4 Ищу исполнителя\u2026")
         ym = _get_client()
         result = await _run_sync(ym.search, query, "artist")
 
         if not result or not result.artists or not result.artists.results:
             try:
-                await message.edit_text("\u274c Исполнитель не найден")
+                await safe_edit(message,"\u274c Исполнитель не найден")
             except Exception:
                 pass
             return
@@ -541,19 +543,19 @@ async def _cmd_artist(client, message) -> None:
             kw["reply_markup"] = InlineKeyboardMarkup(buttons)
 
         try:
-            await message.edit_text(**kw)
+            await safe_edit(message,**kw)
         except Exception:
             await message.reply(**kw)
 
     except ValueError as e:
         try:
-            await message.edit_text(f"\u274c {e}")
+            await safe_edit(message,f"\u274c {e}")
         except Exception:
             pass
     except Exception as e:
         log.error("artist error: %s", e, exc_info=True)
         try:
-            await message.edit_text(f"\u274c Ошибка: {e}")
+            await safe_edit(message,f"\u274c Ошибка: {e}")
         except Exception:
             pass
 
@@ -566,7 +568,7 @@ async def _cmd_album(client, message) -> None:
     parts = message.text.split(maxsplit=2)
     if len(parts) < 3:
         try:
-            await message.edit_text(
+            await safe_edit(message,
                 "\u274c Использование: <code>-ям альбом запрос</code>",
                 parse_mode=ParseMode.HTML,
             )
@@ -576,13 +578,13 @@ async def _cmd_album(client, message) -> None:
 
     query = parts[2]
     try:
-        await message.edit_text("\ud83d\udcbf Ищу альбом\u2026")
+        await safe_edit(message,"\ud83d\udcbf Ищу альбом\u2026")
         ym = _get_client()
         result = await _run_sync(ym.search, query, "album")
 
         if not result or not result.albums or not result.albums.results:
             try:
-                await message.edit_text("\u274c Альбом не найден")
+                await safe_edit(message,"\u274c Альбом не найден")
             except Exception:
                 pass
             return
@@ -591,7 +593,7 @@ async def _cmd_album(client, message) -> None:
         album = await _run_sync(ym.albums_with_tracks, album_id)
         if not album:
             try:
-                await message.edit_text("\u274c Не удалось загрузить альбом")
+                await safe_edit(message,"\u274c Не удалось загрузить альбом")
             except Exception:
                 pass
             return
@@ -626,19 +628,19 @@ async def _cmd_album(client, message) -> None:
             kw["reply_markup"] = InlineKeyboardMarkup(buttons)
 
         try:
-            await message.edit_text(**kw)
+            await safe_edit(message,**kw)
         except Exception:
             await message.reply(**kw)
 
     except ValueError as e:
         try:
-            await message.edit_text(f"\u274c {e}")
+            await safe_edit(message,f"\u274c {e}")
         except Exception:
             pass
     except Exception as e:
         log.error("album error: %s", e, exc_info=True)
         try:
-            await message.edit_text(f"\u274c Ошибка: {e}")
+            await safe_edit(message,f"\u274c Ошибка: {e}")
         except Exception:
             pass
 
@@ -649,13 +651,13 @@ async def _cmd_liked(client, message) -> None:
     from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
     try:
-        await message.edit_text("\u2764\ufe0f Загружаю любимые треки\u2026")
+        await safe_edit(message,"\u2764\ufe0f Загружаю любимые треки\u2026")
         ym = _get_client()
         liked = await _run_sync(ym.users_likes_tracks)
 
         if not liked or not liked.tracks:
             try:
-                await message.edit_text("\ud83d\udced Список лайков пуст")
+                await safe_edit(message,"\ud83d\udced Список лайков пуст")
             except Exception:
                 pass
             return
@@ -686,19 +688,19 @@ async def _cmd_liked(client, message) -> None:
             kw["reply_markup"] = InlineKeyboardMarkup(buttons)
 
         try:
-            await message.edit_text(**kw)
+            await safe_edit(message,**kw)
         except Exception:
             await message.reply(**kw)
 
     except ValueError as e:
         try:
-            await message.edit_text(f"\u274c {e}")
+            await safe_edit(message,f"\u274c {e}")
         except Exception:
             pass
     except Exception as e:
         log.error("liked error: %s", e, exc_info=True)
         try:
-            await message.edit_text(f"\u274c Ошибка: {e}")
+            await safe_edit(message,f"\u274c Ошибка: {e}")
         except Exception:
             pass
 
@@ -709,13 +711,13 @@ async def _cmd_chart(client, message) -> None:
     from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
     try:
-        await message.edit_text("\ud83d\udcca Загружаю чарт\u2026")
+        await safe_edit(message,"\ud83d\udcca Загружаю чарт\u2026")
         ym = _get_client()
         landing = await _run_sync(ym.landing, ["chart"])
 
         if not landing or not landing.blocks:
             try:
-                await message.edit_text("\u274c Не удалось загрузить чарт")
+                await safe_edit(message,"\u274c Не удалось загрузить чарт")
             except Exception:
                 pass
             return
@@ -730,7 +732,7 @@ async def _cmd_chart(client, message) -> None:
 
         if not chart_block:
             try:
-                await message.edit_text("\u274c Чарт не найден")
+                await safe_edit(message,"\u274c Чарт не найден")
             except Exception:
                 pass
             return
@@ -757,7 +759,7 @@ async def _cmd_chart(client, message) -> None:
 
         if not lines or len(lines) == 1:
             try:
-                await message.edit_text("\u274c Чарт пуст")
+                await safe_edit(message,"\u274c Чарт пуст")
             except Exception:
                 pass
             return
@@ -771,19 +773,19 @@ async def _cmd_chart(client, message) -> None:
             kw["reply_markup"] = InlineKeyboardMarkup(buttons)
 
         try:
-            await message.edit_text(**kw)
+            await safe_edit(message,**kw)
         except Exception:
             await message.reply(**kw)
 
     except ValueError as e:
         try:
-            await message.edit_text(f"\u274c {e}")
+            await safe_edit(message,f"\u274c {e}")
         except Exception:
             pass
     except Exception as e:
         log.error("chart error: %s", e, exc_info=True)
         try:
-            await message.edit_text(f"\u274c Ошибка: {e}")
+            await safe_edit(message,f"\u274c Ошибка: {e}")
         except Exception:
             pass
 
@@ -1467,24 +1469,24 @@ async def _cmd_bar(client, message) -> None:
                 tag = " ✓" if pid == current else ""
                 lines.append(f"  {name}  <code>{pid}</code>{tag}")
             lines.append(f"\n<i>Текущий: {BAR_PRESETS[current][0]}</i>")
-            await message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML)
+            await safe_edit(message,"\n".join(lines), parse_mode=ParseMode.HTML)
             return
 
         # ── -ям bar N → set preset ──
         try:
             preset = int(arg)
         except ValueError:
-            await message.edit_text("❌ Укажи номер. Смотри: <code>-ям bar</code>",
+            await safe_edit(message,"❌ Укажи номер. Смотри: <code>-ям bar</code>",
                                     parse_mode=ParseMode.HTML)
             return
         if preset not in BAR_PRESETS:
-            await message.edit_text(f"❌ Нет пресета {preset}. Смотри: <code>-ям bar</code>",
+            await safe_edit(message,f"❌ Нет пресета {preset}. Смотри: <code>-ям bar</code>",
                                     parse_mode=ParseMode.HTML)
             return
         cfg["preset"] = preset
         _save_bar_cfg(cfg)
         name = BAR_PRESETS[preset][0]
-        await message.edit_text(f"✓ Прогресс-бар: {name}", parse_mode=ParseMode.HTML)
+        await safe_edit(message,f"✓ Прогресс-бар: {name}", parse_mode=ParseMode.HTML)
     except Exception as e:
         log.error("_cmd_bar error: %s", e, exc_info=True)
         try:
@@ -1603,19 +1605,8 @@ async def _cmd_now(client, message) -> None:
     """Show currently playing track from Yandex Music with cover card."""
     from pyrogram.enums import ParseMode
 
-    async def _safe(text, **kw):
-        """edit_text with reply fallback for groups."""
-        try:
-            return await message.edit_text(text, **kw)
-        except Exception:
-            try:
-                return await message.reply(text, quote=False, **kw)
-            except Exception:
-                pass
-        return None
-
     try:
-        await _safe("\u270f\ufe0f Определяю\u2026")
+        await safe_edit(message, "\u270f\ufe0f Определяю\u2026")
 
         track, ctx_type = await _run_sync(_fetch_now_playing)
 
@@ -1651,7 +1642,7 @@ async def _cmd_now(client, message) -> None:
             except Exception:
                 pass
 
-            await _safe(
+            await safe_edit(message, 
                 f"\ud83d\udced \u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u043e\u043f\u0440\u0435\u0434\u0435\u043b\u0438\u0442\u044c \u0438\u0433\u0440\u0430\u044e\u0449\u0438\u0439 \u0442\u0440\u0435\u043a\n\n"
                 f"<i>\u0412\u043e\u0437\u043c\u043e\u0436\u043d\u044b\u0435 \u043f\u0440\u0438\u0447\u0438\u043d\u044b:</i>\n"
                 f"\u2022 \u041c\u0443\u0437\u044b\u043a\u0430 \u0438\u0433\u0440\u0430\u0435\u0442 \u0432 \u0431\u0440\u0430\u0443\u0437\u0435\u0440\u0435 \u2014 \u043e\u0447\u0435\u0440\u0435\u0434\u044c \u043d\u0435 \u0441\u0438\u043d\u0445\u0440\u043e\u043d\u0438\u0437\u0438\u0440\u0443\u0435\u0442\u0441\u044f\n"
@@ -1709,7 +1700,7 @@ async def _cmd_now(client, message) -> None:
             caption_lines.append(f'\U0001f3a7 <a href="{track_url}">\u042f\u043d\u0434\u0435\u043a\u0441 \u041c\u0443\u0437\u044b\u043a\u0430</a>')
         text = "\n".join(caption_lines)
 
-        await _safe("\U0001f4e1 \u041e\u0442\u043f\u0440\u0430\u0432\u043b\u044f\u044e\u2026")
+        await safe_edit(message, "\U0001f4e1 \u041e\u0442\u043f\u0440\u0430\u0432\u043b\u044f\u044e\u2026")
 
         if cover_path and os.path.exists(cover_path):
             try:
@@ -1724,15 +1715,15 @@ async def _cmd_now(client, message) -> None:
                 except Exception:
                     pass
             except Exception:
-                await _safe(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+                await safe_edit(message, text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
         else:
-            await _safe(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+            await safe_edit(message, text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
     except ValueError as e:
-        await _safe(f"\u274c {e}", parse_mode=ParseMode.HTML)
+        await safe_edit(message, f"\u274c {e}", parse_mode=ParseMode.HTML)
     except Exception as e:
         log.error("now error: %s", e, exc_info=True)
-        await _safe(f"\u274c \u041e\u0448\u0438\u0431\u043a\u0430: {e}", parse_mode=ParseMode.HTML)
+        await safe_edit(message, f"\u274c \u041e\u0448\u0438\u0431\u043a\u0430: {e}", parse_mode=ParseMode.HTML)
 
 
 async def _cmd_debug(message) -> None:
@@ -1847,19 +1838,19 @@ async def _cmd_debug(message) -> None:
             text = text[:3900] + "\n<i>...обрезано</i>"
 
         try:
-            await message.edit_text(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+            await safe_edit(message,text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
         except Exception:
             await message.reply(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
     except ValueError as e:
         try:
-            await message.edit_text(f"\u274c {e}")
+            await safe_edit(message,f"\u274c {e}")
         except Exception:
             pass
     except Exception as e:
         log.error("debug error: %s", e, exc_info=True)
         try:
-            await message.edit_text(f"\u274c Ошибка: {e}")
+            await safe_edit(message,f"\u274c Ошибка: {e}")
         except Exception:
             pass
 
@@ -1871,7 +1862,7 @@ async def _cmd_token(message) -> None:
     parts = message.text.split(maxsplit=2)
     if len(parts) < 3:
         try:
-            await message.edit_text(
+            await safe_edit(message,
                 "\u274c Использование: <code>-ям token YOUR_TOKEN</code>\n\n"
                 '<i>Получить токен: </i>'
                 '<a href="https://oauth.yandex.ru/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d">'
@@ -1890,7 +1881,7 @@ async def _cmd_token(message) -> None:
         ym = _get_client()
         login = ym.me.account.login
         try:
-            await message.edit_text(
+            await safe_edit(message,
                 f"\u2705 Токен установлен!\n\ud83d\udc64 Аккаунт: <b>{login}</b>",
                 parse_mode=ParseMode.HTML,
             )
@@ -1900,7 +1891,7 @@ async def _cmd_token(message) -> None:
         _reset_client()
         log.error("token error: %s", e, exc_info=True)
         try:
-            await message.edit_text(f"\u274c Неверный токен: {e}", parse_mode=ParseMode.HTML)
+            await safe_edit(message,f"\u274c Неверный токен: {e}", parse_mode=ParseMode.HTML)
         except Exception:
             pass
 
