@@ -299,3 +299,176 @@ def api_script_reload(script_name):
     else:
         add_log(f"[web] Error reloading {script_name}: {result['error']}", "ERROR")
         return jsonify(result), 400
+
+
+# ═══════════════════════════════════════════════════════════════
+#  AI Chat — Settings & History
+# ═══════════════════════════════════════════════════════════════
+
+AI_SETTINGS_FILE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "scripts", "ai_chat", "settings.json",
+)
+AI_HISTORY_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "scripts", "ai_chat", "history",
+)
+
+
+def _ai_load_settings():
+    try:
+        if os.path.exists(AI_SETTINGS_FILE):
+            with open(AI_SETTINGS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {
+        "provider": "ollama",
+        "api_base": "https://api.deepseek.com",
+        "api_key": "",
+        "model": "qwen2.5:1.5b",
+        "system": "",
+        "agent_chats": [],
+    }
+
+
+def _ai_save_settings(s):
+    os.makedirs(os.path.dirname(AI_SETTINGS_FILE), exist_ok=True)
+    with open(AI_SETTINGS_FILE, "w", encoding="utf-8") as f:
+        json.dump(s, f, ensure_ascii=False, indent=2)
+
+
+@app.route("/api/ai/settings", methods=["GET"])
+def api_ai_settings_get():
+    """Get AI chat settings (key masked)."""
+    s = _ai_load_settings()
+    key = s.get("api_key", "")
+    if key:
+        s["api_key_masked"] = key[:8] + "..." + key[-4:] if len(key) > 12 else "***"
+    else:
+        s["api_key_masked"] = ""
+    # Don't send full key to frontend
+    s["has_key"] = bool(key)
+    s.pop("api_key", None)
+    return jsonify(s)
+
+
+@app.route("/api/ai/settings", methods=["POST"])
+def api_ai_settings_post():
+    """Update AI chat settings. Body: partial JSON with fields to update."""
+    body = request.get_json(silent=True) or {}
+    s = _ai_load_settings()
+
+    if "provider" in body and body["provider"] in ("ollama", "api"):
+        s["provider"] = body["provider"]
+    if "api_base" in body:
+        s["api_base"] = body["api_base"]
+    if "api_key" in body:
+        new_key = body["api_key"]
+        if new_key and new_key != "__________":
+            # If user typed a new key, save it
+            s["api_key"] = new_key
+        # If placeholder, keep existing key
+    if "model" in body:
+        s["model"] = body["model"]
+    if "system" in body:
+        s["system"] = body["system"]
+
+    _ai_save_settings(s)
+    add_log(f"[web] AI settings updated")
+
+    # Return masked view
+    key = s.get("api_key", "")
+    return jsonify({
+        "success": True,
+        "provider": s.get("provider", "ollama"),
+        "api_base": s.get("api_base", ""),
+        "has_key": bool(key),
+        "api_key_masked": key[:8] + "..." + key[-4:] if len(key) > 12 else ("***" if key else ""),
+        "model": s.get("model", ""),
+        "system": s.get("system", ""),
+    })
+
+
+@app.route("/api/ai/test", methods=["POST"])
+def api_ai_test():
+    """Test AI provider connection. Returns {ok, models}."""
+    s = _ai_load_settings()
+    provider = s.get("provider", "ollama")
+
+    try:
+        if provider == "api":
+            import requests
+            api_key = s.get("api_key", "")
+            api_base = s.get("api_base", "https://api.deepseek.com").rstrip("/")
+            headers = {"Authorization": f"Bearer {api_key}"}
+            r = requests.get(f"{api_base}/v1/models", headers=headers, timeout=10)
+            if r.status_code == 200:
+                models = [m.get("id", "") for m in r.json().get("data", [])]
+                return jsonify({"ok": True, "provider": "api", "models": sorted(models)[:20]})
+            return jsonify({"ok": False, "provider": "api", "error": f"HTTP {r.status_code}"})
+        else:
+            import requests
+            ollama_url = os.environ.get("OLLAMA_URL", "http://localhost:11434")
+            r = requests.get(f"{ollama_url}/api/tags", timeout=5)
+            if r.status_code == 200:
+                models = [m.get("name", "") for m in r.json().get("models", [])]
+                return jsonify({"ok": True, "provider": "ollama", "models": models})
+            return jsonify({"ok": False, "provider": "ollama", "error": f"HTTP {r.status_code}"})
+    except Exception as e:
+        return jsonify({"ok": False, "provider": provider, "error": str(e)[:200]})
+
+
+@app.route("/api/ai/history", methods=["GET"])
+def api_ai_history_list():
+    """List all chat histories: [{chat_id, messages, size_bytes}]."""
+    result = []
+    if not os.path.isdir(AI_HISTORY_DIR):
+        return jsonify(result)
+    for fname in sorted(os.listdir(AI_HISTORY_DIR)):
+        if not fname.endswith(".json"):
+            continue
+        fpath = os.path.join(AI_HISTORY_DIR, fname)
+        chat_id = fname[:-5]
+        try:
+            with open(fpath, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, list):
+                msg_count = len(data)
+            else:
+                msg_count = 0
+            size = os.path.getsize(fpath)
+            result.append({
+                "chat_id": chat_id,
+                "messages": msg_count,
+                "size_bytes": size,
+            })
+        except Exception:
+            result.append({"chat_id": chat_id, "messages": 0, "size_bytes": 0})
+    # Sort by chat_id
+    result.sort(key=lambda x: x["chat_id"])
+    return jsonify(result)
+
+
+@app.route("/api/ai/history/<chat_id>", methods=["GET"])
+def api_ai_history_get(chat_id):
+    """Get full history for a chat."""
+    fpath = os.path.join(AI_HISTORY_DIR, f"{chat_id}.json")
+    if not os.path.exists(fpath):
+        return jsonify({"error": "not found"}), 404
+    try:
+        with open(fpath, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return jsonify({"chat_id": chat_id, "history": data})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/ai/history/<chat_id>", methods=["DELETE"])
+def api_ai_history_delete(chat_id):
+    """Clear history for a chat."""
+    fpath = os.path.join(AI_HISTORY_DIR, f"{chat_id}.json")
+    if os.path.exists(fpath):
+        os.remove(fpath)
+        add_log(f"[web] AI history cleared: {chat_id}")
+    return jsonify({"success": True})

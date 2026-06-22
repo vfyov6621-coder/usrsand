@@ -129,6 +129,51 @@
         .toast-ok{background:var(--green);color:var(--bg)}
         .toast-err{background:var(--red);color:#fff}
 
+        /* ── AI Settings ── */
+        .ai-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+        @media(max-width:900px){.ai-grid{grid-template-columns:1fr}}
+        .ai-field{display:flex;flex-direction:column;gap:6px}
+        .ai-field label{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.4px;font-weight:600}
+        .ai-field.full{grid-column:1/-1}
+        .ai-input,.ai-select,.ai-textarea{background:var(--input);border:1px solid var(--border);border-radius:6px;padding:9px 12px;color:var(--text);font-size:13px;font-family:inherit;outline:none;transition:border .15s;width:100%}
+        .ai-input:focus,.ai-select:focus,.ai-textarea:focus{border-color:var(--accent)}
+        .ai-select{cursor:pointer;-webkit-appearance:none;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237f849c' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:30px}
+        .ai-textarea{resize:vertical;min-height:80px;font-family:'Cascadia Code','Fira Code',monospace;font-size:12px}
+        .ai-btn-row{display:flex;gap:8px;margin-top:16px}
+        .ai-btn{padding:9px 20px;border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--text);font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;font-family:inherit}
+        .ai-btn:hover{background:var(--input)}
+        .ai-btn-primary{border-color:var(--accent);color:var(--accent)}
+        .ai-btn-primary:hover{background:rgba(137,180,250,.12)}
+        .ai-btn-danger{border-color:rgba(243,139,168,.3);color:var(--red)}
+        .ai-btn-danger:hover{background:rgba(243,139,168,.1)}
+        .ai-test-result{margin-top:12px;padding:10px 14px;border-radius:6px;font-size:12px;display:none}
+        .ai-test-result.ok{display:block;background:rgba(166,227,161,.08);color:var(--green)}
+        .ai-test-result.err{display:block;background:rgba(243,139,168,.08);color:var(--red)}
+
+        /* ── AI History ── */
+        .ai-hist-layout{display:grid;grid-template-columns:260px 1fr;gap:16px;margin-top:16px}
+        @media(max-width:800px){.ai-hist-layout{grid-template-columns:1fr}}
+        .ai-hist-list{max-height:60vh;overflow-y:auto}
+        .ai-hist-list::-webkit-scrollbar{width:4px}
+        .ai-hist-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+        .ai-hist-item{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-radius:6px;cursor:pointer;transition:all .12s;border:1px solid transparent}
+        .ai-hist-item:hover{background:var(--input)}
+        .ai-hist-item.active{background:rgba(137,180,250,.08);border-color:var(--accent)}
+        .ai-hist-id{font-family:monospace;font-size:13px;font-weight:600}
+        .ai-hist-meta{font-size:10px;color:var(--dim);margin-top:2px}
+        .ai-hist-del{background:none;border:none;color:var(--dim);cursor:pointer;font-size:14px;padding:2px 6px;border-radius:4px;transition:all .12s}
+        .ai-hist-del:hover{color:var(--red);background:rgba(243,139,168,.1)}
+        .ai-msg-box{background:var(--card);border-radius:var(--radius);padding:16px;max-height:60vh;overflow-y:auto}
+        .ai-msg-box::-webkit-scrollbar{width:4px}
+        .ai-msg-box::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+        .ai-msg{padding:10px 0;border-bottom:1px solid var(--border)}
+        .ai-msg:last-child{border-bottom:none}
+        .ai-msg-role{font-size:10px;text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:4px}
+        .ai-msg-role.user{color:var(--accent)}
+        .ai-msg-role.assistant{color:var(--green)}
+        .ai-msg-role.system{color:var(--orange)}
+        .ai-msg-text{font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word;color:var(--text)}
+
         /* ── Responsive ── */
         @media(max-width:900px){
             .sidebar{width:56px;padding:16px 0}
@@ -175,6 +220,10 @@
         <div class="nav-item" data-tab="commands" onclick="openTab('commands')">
             <div class="nav-icon">&#9998;</div>
             <span>Команды</span>
+        </div>
+        <div class="nav-item" data-tab="ai" onclick="openTab('ai')">
+            <div class="nav-icon">&#129302;</div>
+            <span>AI Chat</span>
         </div>
         <div class="nav-item" data-tab="logs" onclick="openTab('logs')">
             <div class="nav-icon">&#128196;</div>
@@ -255,6 +304,66 @@
                 <div class="card-h"><h2>Команды</h2></div>
                 <div class="card-b" id="cmdList">
                     <div style="color:var(--dim);text-align:center;padding:20px">Загрузка...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══ AI Chat ═══ -->
+        <div class="tab" id="tab-ai">
+            <!-- Settings -->
+            <div class="card">
+                <div class="card-h">
+                    <h2>Настройки AI</h2>
+                    <button class="btn" onclick="aiTest()">Проверить</button>
+                </div>
+                <div class="card-b">
+                    <div class="ai-grid">
+                        <div class="ai-field">
+                            <label>Провайдер</label>
+                            <select class="ai-select" id="aiProvider" onchange="aiProviderChanged()">
+                                <option value="ollama">Ollama (локально)</option>
+                                <option value="api">API (DeepSeek / OpenAI)</option>
+                            </select>
+                        </div>
+                        <div class="ai-field">
+                            <label>Модель</label>
+                            <input class="ai-input" id="aiModel" placeholder="deepseek-chat">
+                        </div>
+                        <div class="ai-field" id="aiUrlField">
+                            <label>API URL</label>
+                            <input class="ai-input" id="aiUrl" placeholder="https://api.deepseek.com">
+                        </div>
+                        <div class="ai-field" id="aiKeyField">
+                            <label>API Ключ</label>
+                            <input class="ai-input" id="aiKey" type="password" placeholder="sk-...">
+                        </div>
+                        <div class="ai-field full">
+                            <label>Системный промпт</label>
+                            <textarea class="ai-textarea" id="aiSystem" placeholder="Характер и поведение AI..."></textarea>
+                        </div>
+                    </div>
+                    <div id="aiTestResult" class="ai-test-result"></div>
+                    <div class="ai-btn-row">
+                        <button class="ai-btn ai-btn-primary" onclick="aiSave()">Сохранить</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- History -->
+            <div class="card">
+                <div class="card-h">
+                    <h2>История чатов</h2>
+                    <span class="badge" id="aiHistBadge">0</span>
+                </div>
+                <div class="card-b">
+                    <div class="ai-hist-layout">
+                        <div class="ai-hist-list" id="aiHistList">
+                            <div style="padding:16px;color:var(--dim);text-align:center;font-size:12px">Нет истории</div>
+                        </div>
+                        <div class="ai-msg-box" id="aiMsgBox">
+                            <div style="padding:40px;color:var(--dim);text-align:center;font-size:12px">Выберите чат слева</div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -418,6 +527,114 @@ async function modAct(act,name){
     }catch(e){toast("Ошибка запроса",false)}
 }
 
+// ── AI ──
+
+let aiCurrentKey="";
+
+async function aiLoadSettings(){
+    try{
+        const r=await fetch("/api/ai/settings"),d=await r.json();
+        document.getElementById("aiProvider").value=d.provider||"ollama";
+        document.getElementById("aiModel").value=d.model||"";
+        document.getElementById("aiUrl").value=d.api_base||"";
+        document.getElementById("aiSystem").value=d.system||"";
+        aiCurrentKey=d.api_key_masked||"";
+        const keyInput=document.getElementById("aiKey");
+        keyInput.value=d.has_key?"________":"";
+        aiProviderChanged();
+    }catch(e){}
+}
+
+function aiProviderChanged(){
+    const p=document.getElementById("aiProvider").value;
+    const showApi=p==="api";
+    document.getElementById("aiUrlField").style.display=showApi?"":"none";
+    document.getElementById("aiKeyField").style.display=showApi?"":"none";
+}
+
+async function aiSave(){
+    try{
+        const body={
+            provider:document.getElementById("aiProvider").value,
+            model:document.getElementById("aiModel").value,
+            api_base:document.getElementById("aiUrl").value,
+            api_key:document.getElementById("aiKey").value,
+            system:document.getElementById("aiSystem").value,
+        };
+        const r=await fetch("/api/ai/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+        const d=await r.json();
+        if(d.success){
+            toast("Настройки AI сохранены");
+            aiCurrentKey=d.api_key_masked||"";
+            document.getElementById("aiKey").value=d.has_key?"________":"";
+        }else{toast("Ошибка",false)}
+    }catch(e){toast("Ошибка запроса",false)}
+}
+
+async function aiTest(){
+    const el=document.getElementById("aiTestResult");
+    el.className="ai-test-result";el.textContent="Проверяю...";el.style.display="block";
+    try{
+        const r=await fetch("/api/ai/test",{method:"POST"}),d=await r.json();
+        if(d.ok){
+            const models=d.models?d.models.slice(0,8).join(", "):"нет моделей";
+            el.className="ai-test-result ok";
+            el.textContent="\u2705 "+d.provider+" работает. Модели: "+models;
+        }else{
+            el.className="ai-test-result err";
+            el.textContent="\u274c "+d.provider+": "+(d.error||"недоступен");
+        }
+    }catch(e){el.className="ai-test-result err";el.textContent="\u274c "+e.message}
+}
+
+async function aiLoadHistory(){
+    try{
+        const r=await fetch("/api/ai/history"),list=await r.json();
+        document.getElementById("aiHistBadge").textContent=list.length;
+        const el=document.getElementById("aiHistList");
+        if(!list.length){el.innerHTML='<div style="padding:16px;color:var(--dim);text-align:center;font-size:12px">Нет истории</div>';return}
+        let html="";
+        for(const h of list){
+            const sz=h.size_bytes>1024?(h.size_bytes/1024).toFixed(1)+" KB":h.size_bytes+" B";
+            html+=`<div class="ai-hist-item" onclick="aiViewHistory('${h.chat_id}',this)">
+                <div><div class="ai-hist-id">${esc(h.chat_id)}</div><div class="ai-hist-meta">${h.messages} сообщ. \u00B7 ${sz}</div></div>
+                <button class="ai-hist-del" onclick="event.stopPropagation();aiDelHistory('${h.chat_id}')" title="Удалить">\u2715</button>
+            </div>`;
+        }
+        el.innerHTML=html;
+    }catch(e){}
+}
+
+async function aiViewHistory(chatId,el){
+    document.querySelectorAll(".ai-hist-item").forEach(i=>i.classList.remove("active"));
+    if(el)el.classList.add("active");
+    const box=document.getElementById("aiMsgBox");
+    box.innerHTML='<div style="padding:20px;color:var(--dim);text-align:center">Загрузка...</div>';
+    try{
+        const r=await fetch(`/api/ai/history/${chatId}`),d=await r.json();
+        if(d.error){box.innerHTML=`<div style="padding:20px;color:var(--red);text-align:center">${d.error}</div>`;return}
+        const hist=d.history||[];
+        if(!hist.length){box.innerHTML='<div style="padding:20px;color:var(--dim);text-align:center">Пусто</div>';return}
+        let html="";
+        for(const m of hist){
+            const role=m.role||"?";
+            const label=role==="user"?"👤 Вы":role==="assistant"?"🤖 AI":role==="system"?"⚙ System":role;
+            html+=`<div class="ai-msg"><div class="ai-msg-role ${role}">${label}</div><div class="ai-msg-text">${esc(m.content||"")}</div></div>`;
+        }
+        box.innerHTML=html;
+        box.scrollTop=box.scrollHeight;
+    }catch(e){box.innerHTML='<div style="padding:20px;color:var(--red)">Ошибка загрузки</div>'}
+}
+
+async function aiDelHistory(chatId){
+    try{
+        await fetch(`/api/ai/history/${chatId}`,{method:"DELETE"});
+        toast("История удалена: "+chatId);
+        aiLoadHistory();
+        document.getElementById("aiMsgBox").innerHTML='<div style="padding:40px;color:var(--dim);text-align:center;font-size:12px">Выберите чат слева</div>';
+    }catch(e){toast("Ошибка",false)}
+}
+
 async function toggleAuto(name,el){
     const t=el.querySelector(".toggle"),on=t.classList.contains("on"),en=!on;
     try{
@@ -435,7 +652,7 @@ async function toggleAuto(name,el){
 }
 
 // ── Init ──
-Promise.all([fetchAuto(),fetchStatus(),fetchLogs(),fetchMods(),fetchCmds()]);
+Promise.all([fetchAuto(),fetchStatus(),fetchLogs(),fetchMods(),fetchCmds(),aiLoadSettings(),aiLoadHistory()]);
 setInterval(fetchStatus,5000);
 setInterval(fetchLogs,3000);
 setInterval(async()=>{await fetchAuto();await fetchMods()},10000);
