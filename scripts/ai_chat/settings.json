@@ -1,4 +1,8 @@
 {
-  "model": "qwen2.5:3b",
-  "system": "ты просто человек"
+  "provider": "api",
+  "api_base": "https://api.deepseek.com",
+  "api_key": "",
+  "model": "deepseek-chat",
+  "system": "ты просто человек",
+  "agent_chats": []
 }
