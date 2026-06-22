@@ -68,6 +68,13 @@ _file_handler.setLevel(logging.DEBUG)
 _file_handler.setFormatter(logging.Formatter(log_format, datefmt=date_format))
 logging.getLogger().addHandler(_file_handler)
 
+# Quiet mode — remove console handler, keep file only
+if os.environ.get("SANDUSR_QUIET", "0") == "1":
+    logging.getLogger().handlers = [
+        h for h in logging.getLogger().handlers
+        if isinstance(h, logging.FileHandler)
+    ]
+
 VERSION = Config.VERSION
 BOT_NAME = "sandusr"
 _loaded_scripts = []
