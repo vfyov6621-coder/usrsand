@@ -195,7 +195,11 @@ async def _ask_api(prompt: str, model: str, system: str, history: list,
         "Content-Type": "application/json",
     }
 
-    url = api_base.rstrip("/") + "/v1/chat/completions"
+    base = api_base.rstrip("/")
+    if base.endswith("/v1"):
+        url = base + "/chat/completions"
+    else:
+        url = base + "/v1/chat/completions"
 
     try:
         timeout = aiohttp.ClientTimeout(total=180)
@@ -253,7 +257,11 @@ async def _check_api(api_base: str, api_key: str):
     """Проверить доступность API."""
     import aiohttp
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    url = api_base.rstrip("/") + "/v1/models"
+    base = api_base.rstrip("/")
+    if base.endswith("/v1"):
+        url = base + "/models"
+    else:
+        url = base + "/v1/models"
     try:
         timeout = aiohttp.ClientTimeout(total=10)
         async with aiohttp.ClientSession(timeout=timeout) as session:

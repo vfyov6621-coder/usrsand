@@ -402,7 +402,8 @@ def api_ai_test():
             api_key = s.get("api_key", "")
             api_base = s.get("api_base", "https://api.deepseek.com").rstrip("/")
             headers = {"Authorization": f"Bearer {api_key}"}
-            r = requests.get(f"{api_base}/v1/models", headers=headers, timeout=10)
+            models_url = api_base + "/models" if api_base.endswith("/v1") else api_base + "/v1/models"
+            r = requests.get(models_url, headers=headers, timeout=10)
             if r.status_code == 200:
                 models = [m.get("id", "") for m in r.json().get("data", [])]
                 return jsonify({"ok": True, "provider": "api", "models": sorted(models)[:20]})
